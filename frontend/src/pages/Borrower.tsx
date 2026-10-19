@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, NavLink, useParams } from 'react-router-dom'
-import { api, type AssessResult, type BorrowerDetail, type CleanResult, type Meta, type NormResult, type Run, type Steps } from '../api'
-import { useAuth } from '../auth'
+import { api, type AssessResult, type BorrowerDetail, type CleanResult, type NormResult } from '../api'
 import { Chip, ErrorNote, RateChip, Ring, Spinner, Table, toast, when } from '../components/ui'
+import { Setup, Stale, useMeta, useStep } from '../components/steps'
+import SourceStep from './SourceStep'
 
 const STEPS = [['source', 'Source'], ['assess', 'Assess'], ['clean', 'Clean'], ['normalise', 'Normalise']] as const
 
@@ -14,7 +15,7 @@ export default function Borrower() {
   if (b.isLoading) return <Spinner />
   if (b.error || !b.data) return <ErrorNote error={b.error || 'Not found'} />
   const d = b.data
-  const done = (k: string) => k === 'source' ? d.sources.length > 0 : !!d.steps[k as keyof Steps]
+  const done = (k: string) => k === 'source' ? !!(d.steps.collect || d.steps.seek) : !!d.steps[k as 'assess' | 'clean' | 'normalise']
   return (
     <div className="stack">
       <div className="spread">
@@ -48,99 +49,6 @@ function DataPack({ bid, name }: { bid: number; name: string }) {
   }}>{busy ? 'Preparing…' : 'Download data pack (.xlsx)'}</button>
 }
 
-/* ---------------- Source ---------------- */
-function SourceStep({ d }: { d: BorrowerDetail }) {
-  const [src, setSrc] = useState<string>('')
-  const recs = useQuery({
-    queryKey: ['records', d.id, src], enabled: !!src,
-    queryFn: () => api.get<{ fields: { key: string; label: string }[]; records: { id: string; as_of: string | null; flag: string; stale: boolean; fields: Record<string, string> }[]; elements: { element: string; category: string; type: string; value: string | null; sensitivity: string }[]; elements_total: number }>(`/borrowers/${d.id}/records?source=${encodeURIComponent(src)}`),
-  })
-  const internal = d.sources.filter(s => s.elements && !s.records), external = d.sources.filter(s => s.records)
-  const cols = recs.data ? recs.data.fields.filter(f => recs.data!.records.some(r => r.fields[f.key] !== undefined)) : []
-  return (
-    <div className="stack">
-      <div className="kpis">
-        <div className="kpi"><div className="v">{d.sources.length}</div><div className="k">Sources</div></div>
-        <div className="kpi"><div className="v">{internal.length}</div><div className="k">Internal systems</div></div>
-        <div className="kpi"><div className="v">{external.length}</div><div className="k">Record-level feeds</div></div>
-        <div className="kpi"><div className="v">{d.sources.reduce((t, s) => t + s.records, 0)}</div><div className="k">Records</div></div>
-        <div className="kpi"><div className="v">{d.sources.reduce((t, s) => t + s.elements, 0)}</div><div className="k">Internal data elements</div></div>
-      </div>
-      <section className="panel">
-        <div className="ph"><h2>Where the data comes from</h2><span className="hint">Select a source to see its data</span></div>
-        <div className="tblwrap" style={{ border: 0, borderRadius: 0 }}>
-          <table>
-            <thead><tr><th>Source</th><th>Zone</th><th className="num">Records</th><th className="num">Elements</th><th>Newest data</th><th>Provider flags</th></tr></thead>
-            <tbody>{d.sources.map(s => (
-              <tr key={s.source} className="click" onClick={() => setSrc(s.source)} aria-selected={src === s.source} style={src === s.source ? { background: 'var(--accent-soft)' } : undefined}>
-                <td><button className="linkbtn" onClick={e => { e.stopPropagation(); setSrc(s.source) }}>{s.source}</button></td><td>{s.zone}</td>
-                <td className="num">{s.records || '—'}</td><td className="num">{s.elements || '—'}</td><td className="mono">{s.newest || '—'}</td>
-                <td>{s.flags ? <Chip kind="warn">{s.flags} flagged</Chip> : <span className="hint">—</span>}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      {src && <section className="panel">
-        <div className="ph"><h2>{src}</h2><button className="linkbtn" onClick={() => setSrc('')}>Close</button></div>
-        <div className="pb">{recs.isLoading ? <Spinner /> : recs.data && (recs.data.records.length ? (
-          <Table head={['Record', 'As of', 'Flag', ...cols.map(c => c.label)]} mono={[0, 1]}
-            rows={recs.data.records.map(r => [r.id, r.as_of || '—', r.flag ? <Chip kind={r.flag === 'VALIDATED' ? 'ok' : 'warn'}>{r.flag}</Chip> : '—', ...cols.map(c => r.fields[c.key] ?? '')])} />
-        ) : (
-          <>
-            <Table head={['Category', 'Element', 'Type', 'Value', 'Sensitivity']} mono={[3]}
-              rows={recs.data.elements.map(e => [e.category, e.element, e.type, e.value ?? '', e.sensitivity])} />
-            {recs.data.elements_total > recs.data.elements.length && <p className="hint">Showing {recs.data.elements.length} of {recs.data.elements_total}.</p>}
-          </>
-        ))}</div>
-      </section>}
-      <section className="panel"><div className="ph"><h2>Files</h2></div>
-        <div className="pb"><ul className="hint" style={{ margin: 0, paddingLeft: 18 }}>{d.uploads.map(u => <li key={u.id}>{u.filename} · {when(u.at)}</li>)}</ul>
-          <p style={{ marginTop: 10 }}><Link to={`/borrowers/${d.id}/assess`} className="btn primary">Next: Assess →</Link></p></div></section>
-    </div>
-  )
-}
-
-/* ---------------- shared step plumbing ---------------- */
-function useStep<T>(bid: number, step: string) {
-  const qc = useQueryClient()
-  const q = useQuery({ queryKey: ['run', bid, step], queryFn: () => api.get<Run<T> | null>(`/borrowers/${bid}/${step}`) })
-  const m = useMutation({
-    mutationFn: (body: { selected: string[]; ref_date?: string }) => api.post<Run<T>>(`/borrowers/${bid}/${step}`, body),
-    onSuccess: r => {
-      qc.setQueryData(['run', bid, step], r)
-      qc.invalidateQueries({ queryKey: ['borrower', bid] }); qc.invalidateQueries({ queryKey: ['borrowers'] })
-      ;['assess', 'clean', 'normalise'].filter(s => s !== step).forEach(s => qc.invalidateQueries({ queryKey: ['run', bid, s] }))
-    },
-  })
-  return { q, m }
-}
-const useMeta = () => useQuery({ queryKey: ['meta'], queryFn: () => api.get<Meta>('/meta'), staleTime: Infinity })
-
-function Setup({ title, items, sel, setSel, onRun, running, hint, children }: {
-  title: string; items: Record<string, string>; sel: string[]; setSel: (s: string[]) => void; onRun: () => void; running: boolean; hint: string; children?: React.ReactNode
-}) {
-  const { canEdit } = useAuth()
-  return (
-    <section className="panel">
-      <div className="ph"><h2>{title}</h2><span className="hint">{sel.length} selected</span></div>
-      <div className="pb stack">
-        <p className="hint">{hint}</p>
-        <ul className="checks">{Object.entries(items).map(([k, v]) => (
-          <li key={k}><label><input type="checkbox" checked={sel.includes(k)} onChange={e => setSel(e.target.checked ? [...sel, k] : sel.filter(x => x !== k))} />
-            <span className="t">{k}</span><span className="s">{v}</span></label></li>))}</ul>
-        {children}
-      </div>
-      <div className="pf">{canEdit ? <button className="btn primary" disabled={running || !sel.length} onClick={onRun}>{running ? <><span className="spin" aria-hidden /> Running…</> : `Run ${title.split(' ')[0]}`}</button>
-        : <span className="hint">Viewers can see results but not run steps.</span>}</div>
-    </section>
-  )
-}
-
-function Stale({ r, label }: { r: { stale: boolean; stale_reason?: string } | null | undefined; label: string }) {
-  if (!r?.stale) return null
-  return <div className="note warn">{r.stale_reason || 'New files were uploaded after this run'}. Run {label} again to update the results.</div>
-}
-
 /* ---------------- Assess ---------------- */
 function AssessStep({ bid, d }: { bid: number; d: BorrowerDetail }) {
   const meta = useMeta()
@@ -168,6 +76,8 @@ function AssessStep({ bid, d }: { bid: number; d: BorrowerDetail }) {
             <Ring score={R.overall.score} rating={R.overall.rating} />
             <div className="stack grow" style={{ gap: 6 }}>
               <div className="row"><h2>Data confidence for {R.borrower}</h2><RateChip r={R.overall.rating} /></div>
+              {R.inputs && (!R.inputs.collector || !R.inputs.seeker) && <p className="hint warn">{!R.inputs.collector && !R.inputs.seeker ? 'Collector and Seeker' : !R.inputs.collector ? 'Collector' : 'Seeker'} not run: output coverage and identity attributes are not scored. <Link to={`/borrowers/${bid}/source${!R.inputs.collector ? '' : '?tab=seeker'}`}>Run it</Link></p>}
+              {R.inputs?.scope && <p className="hint">Scope: {R.inputs.scope.length} sources chosen in the Collector.</p>}
               <p className="hint">Average of {R.selected.length} criteria on data {R.version}. High ≥ 85, Medium 60–84, Low &lt; 60.{R.overall.cap ? ` ${R.overall.cap}.` : ''} Reference date {R.ref_date}.</p>
               {R.stages.length > 1 && <div className="row">{R.stages.map((st, i) => <span key={st.key} className="row" style={{ gap: 6 }}>
                 {i > 0 && <span aria-hidden>→</span>}<span className="hint">{st.label}</span><b>{st.score}</b></span>)}

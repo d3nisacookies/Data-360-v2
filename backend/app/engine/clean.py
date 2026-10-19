@@ -27,7 +27,7 @@ def business_days(start: date, n: int) -> str:
     return d.isoformat()
 
 
-def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY) -> dict:
+def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: dict | None = None) -> dict:
     selected = [a for a in (selected or list(ACTIONS)) if a in ACTIONS] or list(ACTIONS)
     ds = apply_changes(raw, {})
     ds.version = raw.version
@@ -155,6 +155,13 @@ def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY) -> di
     for e in ds.live_elements():
         if e.canonical == "Sanctions_Screening" and norm_text(e.value or "") in ("potential match", "possible match"):
             escalate(f"Sanctions potential match ({e.source})", "Internal screening shows a potential match", "Financial Crime Compliance", 2)
+    sk = (ctx or {}).get("seek")
+    for r in (sk["results"] if sk else []):
+        if r["status"] == "miss":
+            escalate(f"Obtain {r['attribute']} for {ds.borrower}", "Not held in any uploaded source (Seeker)", "Relationship manager", 10)
+        elif r["status"] == "conf" and not (r.get("field") and G.get(r["field"])):
+            escalate(f"Resolve {r['attribute']} for {ds.borrower}", "Sources disagree: " + "; ".join(f"{v['value']} ({', '.join(v['locations'])})" for v in r["values"][:4]),
+                     "Credit analyst", 5)
     stale = [r for r in ds.live() if ds.is_stale(r)]
     for s in sorted({r.source for r in stale}):
         k = sum(1 for r in stale if r.source == s)

@@ -44,7 +44,28 @@ def _issue(kind, where, detail, **kw):
     return {"issue": kind, "where": where, "detail": detail, **kw}
 
 
-def score_dims(ds: Dataset, G: dict | None = None) -> dict:
+def _ctx_terms(ctx: dict | None, G: dict, cleaned: bool):
+    """Seeker and Collector findings that feed Completeness, Consistency and Business relevance."""
+    ctx = ctx or {}
+    sk, co = ctx.get("seek"), ctx.get("collect")
+    t = {"attrs": None, "found": [], "missing": [], "conf": [], "resolved": [], "cov": None, "outs": []}
+    if sk:
+        res = sk["results"]
+        t["attrs"] = len(res)
+        t["found"] = [r for r in res if r["status"] in ("ok", "multi", "conf")]
+        t["missing"] = [r for r in res if r["status"] in ("miss", "indirect", "pending")]
+        conf = [r for r in res if r["status"] == "conf"]
+        # after Clean, a conflict on a field with a golden value is settled by the survivorship rule
+        t["resolved"] = [r for r in conf if cleaned and r.get("field") and G.get(r["field"])]
+        t["conf"] = [r for r in conf if r not in t["resolved"]]
+    if co:
+        c = co["coverage"]
+        t["outs"] = c
+        t["cov"] = (sum(1 for x in c if x["status"] == "ok") + 0.5 * sum(1 for x in c if x["status"] == "part")) / len(c) if c else None
+    return t
+
+
+def score_dims(ds: Dataset, G: dict | None = None, ctx: dict | None = None, cleaned: bool = False) -> dict:
     G = G if G is not None else golden(ds)
     recs = ds.live()
     els = ds.live_elements()
@@ -61,13 +82,19 @@ def score_dims(ds: Dataset, G: dict | None = None) -> dict:
             if r.source in srcs and is_blank(r.fields.get(f)) and G.get(f):
                 where = "another record" if G[f]["source"] == r.source else G[f]["source"]
                 incomplete[r.key] = (r, f"{LABEL[f]} blank in a golden-source record; value held in {where}")
+    T = _ctx_terms(ctx, G, cleaned)
     issues = [_issue("Critical field missing", LABEL[f], "Not held in any source", field=f) for f in CRITICAL if not G.get(f)]
+    issues += [_issue("Attribute missing" if r["status"] == "miss" else "Attribute only partly found" if r["status"] == "indirect" else "Attribute requested",
+                      r["attribute"], "Requested from " + ", ".join(r["requested_from"]) if r["status"] == "pending" else (r.get("note") or "Not held in any source"))
+               for r in T["missing"]]
     issues += [_issue("Field missing", LABEL[f], "Not held in any source", field=f) for f in IMPORTANT if not G.get(f)]
     issues += [_issue("Incomplete record", f"{r.source} · {r.rid}", why, key=r.key) for r, why in incomplete.values()]
     out["Completeness"] = {
-        "score": pct(mean([len(crit_have) / len(CRITICAL), len(imp_have) / len(IMPORTANT), 1 - len(incomplete) / len(recs) if recs else None])),
+        "score": pct(mean([len(crit_have) / len(CRITICAL), len(imp_have) / len(IMPORTANT), 1 - len(incomplete) / len(recs) if recs else None,
+                           len(T["found"]) / T["attrs"] if T["attrs"] else None])),
         "basis": f"{len(crit_have)} of {len(CRITICAL)} critical fields and {len(imp_have)} of {len(IMPORTANT)} supporting fields held · "
-                 f"{len(incomplete)} of {len(recs)} records incomplete",
+                 f"{len(incomplete)} of {len(recs)} records incomplete"
+                 + (f" · {len(T['found'])} of {T['attrs']} Seeker attributes found" if T["attrs"] else " · Seeker not run"),
         "issues": issues}
 
     # ---- Accuracy: disagreement with a golden-source value
@@ -102,12 +129,16 @@ def score_dims(ds: Dataset, G: dict | None = None) -> dict:
             spread.append((f, off))
     inc_flag = [r for r in recs if r.flag == "INCONSISTENT" and not r.status]
     out["Consistency"] = {
-        "score": pct(mean([1 - len(spread) / multi if multi else None, 1 - len(inc_flag) / len(recs) if recs else None])),
-        "basis": f"{len(spread)} of {multi} fields held by two or more sources have conflicting values · {len(inc_flag)} records flagged inconsistent",
+        "score": pct(mean([1 - len(spread) / multi if multi else None, 1 - len(inc_flag) / len(recs) if recs else None,
+                           1 - len(T["conf"]) / len(T["found"]) if T["found"] else None])),
+        "basis": f"{len(spread)} of {multi} fields held by two or more sources have conflicting values · {len(inc_flag)} records flagged inconsistent"
+                 + (f" · {len(T['conf'])} of {len(T['found'])} Seeker attributes have values that disagree" if T["found"] else "")
+                 + (f" ({len(T['resolved'])} settled by the golden source in Clean)" if T["resolved"] else ""),
         "issues": [_issue("Conflicting values", LABEL[f], f"Golden {G[f]['display']} ({G[f]['source']}) vs "
                           + "; ".join(f"{v} ({', '.join(sorted(s))})" for v, s in list(off.items())[:6]), field=f)
                    for f, off in spread]
-                  + [_issue("Inconsistent record", f"{r.source} · {r.rid}", "Flagged inconsistent by the provider", key=r.key) for r in inc_flag]}
+                  + [_issue("Inconsistent record", f"{r.source} · {r.rid}", "Flagged inconsistent by the provider", key=r.key) for r in inc_flag]
+                  + [_issue("Attribute values disagree", r["attribute"], "; ".join(f"{v['value']} ({', '.join(v['locations'])})" for v in r["values"][:5])) for r in T["conf"]]}
 
     # ---- Validity
     checked, bad = 0, []
@@ -163,10 +194,14 @@ def score_dims(ds: Dataset, G: dict | None = None) -> dict:
     full = [s for s, fs in sec.items() if all(G.get(f) for f in fs)]
     part = [s for s, fs in sec.items() if s not in full and any(G.get(f) for f in fs)]
     out["Business relevance"] = {
-        "score": pct(mean([(len(full) + 0.5 * len(part)) / len(sec), len(crit_have) / len(CRITICAL)])),
-        "basis": f"{len(full)} of {len(sec)} credit-memo sections fully supported, {len(part)} partly",
+        "score": pct(mean([(len(full) + 0.5 * len(part)) / len(sec), len(crit_have) / len(CRITICAL), T["cov"]])),
+        "basis": f"{len(full)} of {len(sec)} credit-memo sections fully supported, {len(part)} partly"
+                 + (f" · {sum(1 for x in T['outs'] if x['status'] == 'ok')} of {len(T['outs'])} Collector outputs fully covered" if T["outs"] else " · Collector not run"),
         "issues": [_issue("Section not fully supported", s, "Missing: " + ", ".join(LABEL[f] for f in fs if not G.get(f)))
-                   for s, fs in sec.items() if s not in full]}
+                   for s, fs in sec.items() if s not in full]
+                  + [_issue("Output not fully covered", x["output"], f"{x['hit']} of {x['total']} evidence groups found"
+                            + (f"; missing {', '.join(x['missing'][:4])}" if x["missing"] else ""))
+                     for x in T["outs"] if x["status"] != "ok"]}
     return out
 
 
@@ -181,16 +216,16 @@ def overall(dims: dict, selected: list[str]) -> dict:
     return {"score": score, "rating": r, "cap": cap}
 
 
-def assess(raw: Dataset, cleaned: Dataset | None, selected: list[str] | None = None) -> dict:
+def assess(raw: Dataset, cleaned: Dataset | None, selected: list[str] | None = None, ctx: dict | None = None) -> dict:
     selected = [d for d in (selected or list(DIMS)) if d in DIMS] or list(DIMS)
     stages = []
     G0 = golden(raw)
-    d0 = score_dims(raw, G0)
+    d0 = score_dims(raw, G0, ctx)
     stages.append({"key": "sourced", "label": "As sourced", "version": raw.version, "dims": {k: d0[k]["score"] for k in DIMS}, **overall(d0, selected)})
     current, Gc = d0, G0
     if cleaned is not None:
         Gc = golden(cleaned)
-        current = score_dims(cleaned, Gc)
+        current = score_dims(cleaned, Gc, ctx, cleaned=True)
         stages.append({"key": "cleaned", "label": "After Clean", "version": cleaned.version, "dims": {k: current[k]["score"] for k in DIMS}, **overall(current, selected)})
     ds = cleaned or raw
     flags = defaultdict(int)
@@ -206,4 +241,6 @@ def assess(raw: Dataset, cleaned: Dataset | None, selected: list[str] | None = N
                    "removed": len(raw.records) - len(ds.live())},
         "provider_flags": dict(flags),
         "golden": Gc,
+        "inputs": {"collector": bool((ctx or {}).get("collect")), "seeker": bool((ctx or {}).get("seek")),
+                   "scope": (ctx or {}).get("collect", {}).get("sources") if (ctx or {}).get("collect") else None},
     }

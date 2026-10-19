@@ -7,7 +7,7 @@ Data360 prepares trusted borrower data for credit memos. Upload exports from int
 - cleans what it safely can, logging every change, and escalates the rest to named owners;
 - publishes standard definitions (metrics, KPIs and a master record) for the credit memo.
 
-This is **Phase 1** of the Data360 framework. Its steps are Source, Assess, Clean, Normalise and Credit memo; the credit memo is the next milestone. Phases 2 and 3 move over from the demo console in later milestones.
+This is **Phase 1** of the Data360 framework. Its steps are Source (Collector and Seeker), Assess, Clean, Normalise and Credit memo; the credit memo is the next milestone. Phases 2 and 3 move over from the demo console in later milestones.
 
 > The sample files in `seed/sample-files` are **hypothetical**. They are synthetic test data for a Singapore structured-debt desk, with deliberate defects, and contain no real bank, borrower, rating or compliance data.
 
@@ -85,6 +85,8 @@ Every value is stored in one long table (`observations`), whatever layout the fi
 
 ### How the engine decides
 
+- **Source: Collector.** You choose which uploaded sources are in scope and which credit-memo outputs you need (borrower profile, facility summary, KYC and sanctions, and so on). It shows the coverage of each output: which evidence is held, where, and what is missing. It can also add an out-of-scope source and run again. Assess, Clean and Normalise then use only the sources in scope.
+- **Source: Seeker.** It searches every uploaded file for identity attributes (registration number, legal name, country, beneficial owner and others, including attributes you type yourself) and shows every value, where it was found, and whether the sources agree. Missing attributes can be marked as requested from an outside source (GLEIF, ACRA and others). Its findings feed Completeness and Consistency in Assess, and Clean escalates anything missing or unresolved.
 - **Golden record.** For each field, the golden source wins (for example, Corporate Registry for the registration number, or Moody's for the rating), using its latest record that isn't flagged wrong, inconsistent or stale. If the golden source has no value, the value with the most support across sources wins, weighted by how reliable each source is. These rules are in `backend/app/engine/reference.py`.
 - **Assess** detects issues from the data itself: disagreement with the golden source, conflicts between sources, values with the wrong format for their type, missing fields, records older than 90 days, and feeds that are behind their refresh cycle. Quality flags supplied by a data provider are used only as extra evidence. The sample dataset ships an answer key of seeded defects that the engine never reads, and `tests/test_engine.py` checks that **every seeded defect is detected**.
 - **Clean** never edits the original data. It records changes, and replaying them produces version **v1.1 (cleaned)** while v1.0 (as sourced) is kept. **Assess** then scores the cleaned data and shows before and after. If new files arrive after a run, that run is marked **Out of date**.

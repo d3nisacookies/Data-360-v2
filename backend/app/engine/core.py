@@ -118,6 +118,17 @@ def apply_changes(ds: Dataset, changes: dict) -> Dataset:
     return out
 
 
+def scoped(ds: Dataset, sources: list[str] | None) -> Dataset:
+    """Only the sources the Collector put in scope (None = everything)."""
+    if not sources:
+        return ds
+    keep = set(sources)
+    out = copy.copy(ds)
+    out.records = [r for r in ds.records if r.source in keep]
+    out.elements = [e for e in ds.elements if e.source in keep]
+    return out
+
+
 def eligible(r: Rec) -> bool:
     """Can this record supply a golden value? Correction clears a wrong/inconsistent flag, never staleness."""
     if r.removed or r.flag == "STALE":

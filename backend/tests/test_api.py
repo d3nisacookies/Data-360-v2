@@ -113,3 +113,32 @@ def test_viewer_cannot_run(client, h):
 def test_audit_trail(client, h):
     actions = {e["action"] for e in client.get("/api/audit", headers=h).json()}
     assert {"login", "upload", "ingest", "run.assess", "run.clean", "export.datapack"} <= actions
+
+
+def test_collector_and_seeker_feed_later_steps(client, h):
+    bid = borrower_id(client, h, "Meridian Renewables Limited")
+    meta = client.get("/api/meta", headers=h).json()
+    assert "Facility summary" in meta["outputs"] and "Registration Number" in meta["attributes"]
+    # Collector: everything except Email archives, four outputs
+    det = client.get(f"/api/borrowers/{bid}", headers=h).json()
+    srcs = [s["source"] for s in det["sources"] if s["source"] != "Email archives"]
+    co = client.post(f"/api/borrowers/{bid}/collect", json={"sources": srcs, "outputs": ["Borrower profile", "Relationship history", "Facility summary", "KYC and sanctions"]}, headers=h).json()["result"]
+    rel = next(c for c in co["coverage"] if c["output"] == "Relationship history")
+    assert rel["status"] == "part" and "Email archives" in rel["addable"]
+    assert next(c for c in co["coverage"] if c["output"] == "Facility summary")["status"] == "ok"
+    # Seeker: standard attributes plus a typed one; request a registry for a missing attribute
+    sk = client.post(f"/api/borrowers/{bid}/seek", json={"attributes": ["Registration Number", "Country of Incorporation", "LEI (LEI)", "Tax ID", "Beneficial Owner", "Registered owner"],
+                                                         "requested": ["IRS FATCA FFI list"]}, headers=h).json()["result"]
+    st = {r["attribute"]: r for r in sk["results"]}
+    assert st["Registration Number"]["status"] in ("ok", "conf") and st["Registration Number"]["hits"]
+    assert st["Tax ID"]["status"] == "pending"
+    assert st["Registered owner"]["hits"], "a typed attribute should be found by name similarity"
+    # Assess picks them up and is scoped to the Collector's sources
+    a = client.post(f"/api/borrowers/{bid}/assess", json={}, headers=h).json()["result"]
+    assert a["inputs"] == {"collector": True, "seeker": True, "scope": srcs}
+    assert "Seeker attributes found" in a["dims"]["Completeness"]["basis"]
+    assert "Collector outputs fully covered" in a["dims"]["Business relevance"]["basis"]
+    assert any(i["issue"] == "Output not fully covered" for i in a["dims"]["Business relevance"]["issues"])
+    # re-running the Collector makes Assess out of date
+    client.post(f"/api/borrowers/{bid}/collect", json={"sources": srcs, "outputs": ["Borrower profile"]}, headers=h)
+    assert client.get(f"/api/borrowers/{bid}", headers=h).json()["steps"]["assess"]["stale"] is True

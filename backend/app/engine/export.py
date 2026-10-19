@@ -31,7 +31,7 @@ def _sheet(wb, title, head, rows, widths=None):
     return ws
 
 
-def data_pack(ds: Dataset, assess: dict | None, clean: dict | None, user: str) -> bytes:
+def data_pack(ds: Dataset, assess: dict | None, clean: dict | None, user: str, ctx: dict | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "README"
@@ -65,6 +65,17 @@ def data_pack(ds: Dataset, assess: dict | None, clean: dict | None, user: str) -
         _sheet(wb, "Audit trail", ["#", "Action", "Record", "Field", "Original", "New", "Reason", "Source", "By"],
                [[l["n"], l["action"], l["record"], l["field"], l["from"], l["to"], l["reason"], l["source"], l["by"]] for l in clean["log"]])
         _sheet(wb, "Escalations", ["Item", "Why", "Owner", "Due"], [[e["item"], e["why"], e["owner"], e["due"]] for e in clean["escalations"]])
+    co, sk = (ctx or {}).get("collect"), (ctx or {}).get("seek")
+    if co:
+        _sheet(wb, "Collector", ["Output", "Status", "Evidence found", "Evidence groups", "Missing", "Could add"],
+               [[c["output"], {"ok": "Covered", "part": "Partly covered", "none": "Not covered"}[c["status"]], c["hit"], c["total"],
+                 "; ".join(c["missing"]), ", ".join(c["addable"])] for c in co["coverage"]])
+    if sk:
+        _sheet(wb, "Seeker", ["Attribute", "Status", "Values found", "Locations", "Requested from"],
+               [[r["attribute"], {"ok": "Found", "multi": "Found (several)", "conf": "Values disagree", "indirect": "Partial match",
+                                  "pending": "Requested", "miss": "Not found"}[r["status"]],
+                 "; ".join(f"{v['value']} ×{v['count']}" for v in r["values"]), ", ".join(r["locations"]), ", ".join(r["requested_from"])]
+                for r in sk["results"]])
     if assess:
         _sheet(wb, "Assess", ["Criterion", "Score", "Rating", "Basis", "Issues"],
                [[k, v["score"], v["rating"], v["basis"], len(v["issues"])] for k, v in assess["dims"].items()])

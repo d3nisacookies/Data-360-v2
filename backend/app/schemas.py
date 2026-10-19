@@ -34,6 +34,10 @@ class UserPatch(BaseModel):
 class StepRun(BaseModel):
     selected: list[str] | None = None
     ref_date: str | None = None  # YYYY-MM-DD
+    sources: list[str] | None = None     # collect: sources in scope
+    outputs: list[str] | None = None     # collect: credit-memo outputs needed
+    attributes: list[str] | None = None  # seek: attributes to find
+    requested: list[str] | None = None   # seek: outside sources requested
 
 
 class SheetPick(BaseModel):

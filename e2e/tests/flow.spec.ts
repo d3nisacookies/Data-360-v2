@@ -27,11 +27,29 @@ test('upload, assess, clean, re-assess, normalise, export', async ({ page }) => 
   await page.locator('nav.main a', { hasText: 'Borrowers' }).click()
   await expect(page.locator('tbody tr')).toHaveCount(7)
   await page.locator('td a', { hasText: /^HarbourVest$/ }).click()
-  await expect(page.getByText('Where the data comes from')).toBeVisible()
+  // Collector: everything in scope, one extra output
+  await expect(page.getByRole('heading', { name: 'Collector' })).toBeVisible()
+  await page.getByLabel('Facility summary').check()
+  await page.click('button:has-text("Run Collector")')
+  await expect(page.getByText('Does the data cover the credit memo?')).toBeVisible()
+  await expect(page.locator('.dcard', { hasText: 'Facility summary' }).getByText('Covered', { exact: true })).toBeVisible()
+
+  // Seeker: standard attributes plus one typed by the user
+  await page.getByRole('tab', { name: /Seeker/ }).click()
+  await page.getByPlaceholder('e.g. UBO nationality').fill('Registered owner')
+  await page.click('button:has-text("Add")')
+  await page.click('button:has-text("Run Seeker")')
+  await expect(page.getByText(/attributes found for/)).toBeVisible()
+  const reg = page.locator('tr', { hasText: 'Registration Number' }).first()
+  await expect(reg.getByText('Values disagree')).toBeVisible()   // registry number vs the loan system's EIN
+  await reg.getByRole('button', { name: 'Details' }).click()
+  await expect(page.getByText('EIN 70-3301087').first()).toBeVisible()
 
   await page.locator('.steps a', { hasText: 'Assess' }).click()
   await page.click('button:has-text("Run Assess")')
   const before = Number(await page.locator('.ring b').innerText())
+  await expect(page.getByText('Scope: ')).toBeVisible()
+  await expect(page.getByText(/Seeker attributes found/)).toBeVisible()
   expect(before).toBeGreaterThan(50)
 
   await page.locator('.steps a', { hasText: 'Clean' }).click()
@@ -39,7 +57,7 @@ test('upload, assess, clean, re-assess, normalise, export', async ({ page }) => 
   await expect(page.getByText(/changes logged/).first()).toBeVisible()
 
   await page.locator('.steps a', { hasText: 'Assess' }).click()
-  await expect(page.getByText('Clean ran after this assessment')).toBeVisible()
+  await expect(page.getByText('Clean ran after this run')).toBeVisible()
   await page.click('button:has-text("Run Assess")')
   await expect(page.locator('.delta').first()).toBeVisible()
   const after = Number(await page.locator('.ring b').innerText())
