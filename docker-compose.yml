@@ -1,0 +1,47 @@
+# Data360: `docker compose up -d --build`, then open http://localhost:8080
+name: data360
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-data360}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-data360}
+      POSTGRES_DB: ${POSTGRES_DB:-data360}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    image: ghcr.io/d3nisacookies/data-360-v2-api:latest
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-data360}:${POSTGRES_PASSWORD:-data360}@db:5432/${POSTGRES_DB:-data360}
+      STORAGE_DIR: /data
+    volumes:
+      - uploads:/data
+      - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    image: ghcr.io/d3nisacookies/data-360-v2-web:latest
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:

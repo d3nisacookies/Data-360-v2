@@ -1,0 +1,36 @@
+# Development: live reload for both apps.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Web: http://localhost:5173   API docs: http://localhost:8000/docs
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  api:
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      - ./backend:/app
+      - uploads:/data
+      - ./seed:/seed:ro
+    ports:
+      - "8000:8000"
+
+  web:
+    image: node:22-alpine
+    build: !reset null
+    working_dir: /app
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    ports: !override
+      - "5173:5173"
+    healthcheck:
+      disable: true
+
+volumes:
+  web_node_modules:
