@@ -64,7 +64,7 @@ export default function Upload() {
             <ErrorNote error={send.error} />
           </div>
         </section>
-      ) : <div className="note">Your role can view uploads but not add them.</div>}
+      ) : <div className="callout">Your role can view uploads but not add them.</div>}
 
       {open !== null && <MappingEditor key={open} id={open} onClose={() => setOpen(null)} />}
       <section className="panel">
@@ -80,7 +80,7 @@ export default function Upload() {
                     <td>{u.format === 'dictionary' ? 'Data dictionary' : u.format === 'records' ? 'Records' : '—'}{u.mapping?.sheet && <div className="hint">Sheet: {u.mapping.sheet}</div>}</td>
                     <td><Chip kind={STATUS[u.status][1]}>{STATUS[u.status][0]}</Chip></td>
                     <td className="hint">{u.status === 'ingested' ? <>{u.summary.observations?.toLocaleString()} values · {(u.summary.borrowers || []).length > 2 ? `${u.summary.borrowers!.length} borrowers` : (u.summary.borrowers || []).map((b, i) =>
-                      <span key={b.id}>{i ? ', ' : ''}<Link to={`/borrowers/${b.id}`}>{b.name}</Link></span>)}</> : '—'}</td>
+                      <span key={b.id}>{i ? ', ' : ''}<Link to={`/b/${b.id}/p1/source`}>{b.name}</Link></span>)}</> : '—'}</td>
                     <td className="hint">{when(u.created_at)}</td>
                     <td><div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                       {canEdit && u.status !== 'failed' && <button className="btn small" onClick={() => setOpen(open === u.id ? null : u.id)}>{u.status === 'needs_mapping' ? 'Review' : 'Mapping'}</button>}
@@ -141,8 +141,8 @@ function MappingEditor({ id, onClose }: { id: number; onClose: () => void }) {
         <button className="linkbtn" onClick={onClose}>Close</button>
       </div>
       <div className="pb stack">
-        {m.missing?.length > 0 && data.status !== 'ingested' && <div className="note warn">{m.missing.map(x => MISSING[x] || x).join(' ')}</div>}
-        {m.uncertain && m.uncertain.length > 0 && <div className="note">Check these guesses: {m.uncertain.join(', ')}.</div>}
+        {m.missing?.length > 0 && data.status !== 'ingested' && <div className="callout warn">{m.missing.map(x => MISSING[x] || x).join(' ')}</div>}
+        {m.uncertain && m.uncertain.length > 0 && <div className="callout">Check these guesses: {m.uncertain.join(', ')}.</div>}
         <div className="row" style={{ alignItems: 'end' }}>
           <label className="f" style={{ minWidth: 220 }}><span className="lbl">Sheet</span>
             <select value={m.sheet} onChange={e => sheet.mutate(e.target.value)}>

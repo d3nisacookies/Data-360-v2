@@ -5,9 +5,21 @@ Data360 prepares trusted borrower data for credit memos. Upload exports from int
 - recognises the file layout and the borrowers in it;
 - scores the data on seven quality criteria;
 - cleans what it safely can, logging every change, and escalates the rest to named owners;
-- publishes standard definitions (metrics, KPIs and a master record) for the credit memo.
+- publishes standard definitions (metrics, KPIs and a master record) for the credit memo;
+- builds the credit memo, with a source on every value, compliance checks and an approval chain;
+- plans and tracks the fixes: gaps, a costed roadmap, project plans and a fix list by uploaded file.
 
-This is **Phase 1** of the Data360 framework. Its steps are Source (Collector and Seeker), Assess, Clean, Normalise and Credit memo; the credit memo is the next milestone. Phases 2 and 3 move over from the demo console in later milestones.
+The console follows the three-phase Data360 framework. Each phase unlocks when the one before it is signed off:
+
+| Phase | Steps | Cleared when |
+|---|---|---|
+| 1 · Assess & Improve | 1 Source (Collector, Seeker, source tasks) · 2 Assess · 3 Clean · 4 Normalise · 5 Credit memo (5.1 Prepare to 5.5 Review and retain) | every step is current and the memo is retained (SHA-256 fingerprint) |
+| 2 · Improve & Plan | 6 Gap analysis · 7 Recommendations · 8 Confidence by domain · 9 Roadmap and business case | the roadmap is approved |
+| 3 · Transform | 10 Stabilise · 11 Standardise · 12 Optimise · 13 Transform, each with a project plan | all four stages are completed |
+
+Alongside: an executive summary and detailed source report (Word or HTML), the **Rules & policies** checklist (65 rules; switching one off removes its checks from the memo), and the **fix plan**, which maps every change and open issue back to the uploaded file it came from. Reports and plans download as Word and Excel files; source files are never changed.
+
+If an earlier step is re-run (new files, a new Clean or Normalise run), the work built on it starts again: the memo returns to draft, and Phases 2 and 3 relock until it is retained again.
 
 > The sample files in `seed/sample-files` are **hypothetical**. They are synthetic test data for a Singapore structured-debt desk, with deliberate defects, and contain no real bank, borrower, rating or compliance data.
 
@@ -62,11 +74,14 @@ The web app is at http://localhost:5173 and the interactive API docs are at http
 ```
 backend/
   app/ingest/   read files, detect the layout, map columns, recognise borrowers
-  app/engine/   golden record, Assess, Clean, Normalise, Excel data pack
+  app/engine/   golden record, Assess, Clean, Normalise, pick-list extras, credit memo,
+                Phase 2, Phase 3, fix plan, project plans, reports (Word via python-docx, Excel via openpyxl)
+  app/workspace.py  per-borrower memo / Phase 2 / Phase 3 state and phase gating
   app/api/      REST endpoints
   alembic/      database migrations (applied automatically on start)
   tests/        pytest, including a detection check against the sample answer key
-frontend/src/   pages: Borrowers, Upload (with mapping review), Borrower workspace, Users & audit
+frontend/src/   pages: About, Console (dashboard), Phase 1, credit memo, Phase 2, Phase 3, Fix plan, Upload, Users & audit.
+                Later-step screens are described by the API as sections and drawn by one renderer (components/sections.tsx).
 e2e/            Playwright browser test of the full journey
 seed/           sample files
 ```
@@ -128,11 +143,10 @@ GitHub Actions runs on every push:
 
 ## Roadmap
 
-1. **Credit memo (step 5)** drafted from the golden record, with the **Rules & policies** checklist. Critical rules will be locked, and rule versions frozen with each memo.
-2. **AI assistant**, turned off by default, with:
+1. **AI assistant**, turned off by default, with:
    - a free local model (Ollama) as the default provider;
    - optional providers set in the config file: Anthropic, AWS Bedrock or Google Vertex, in a region the bank approves;
    - an on/off switch per client;
    - redaction of names and IDs before anything leaves the server.
-3. **Phases 2 and 3** (steps 6–13), moved over from the demo console.
-4. **Background jobs and object storage** (Redis worker, S3/MinIO) for large folders, connectors (SharePoint, S3, databases), and bank single sign-on (OIDC, Azure AD or Okta).
+2. **Memo versioning**: keep earlier retained memos when inputs change, lock critical rules, and freeze the rule set with each memo.
+3. **Background jobs and object storage** (Redis worker, S3/MinIO) for large folders, connectors (SharePoint, S3, databases), and bank single sign-on (OIDC, Azure AD or Okta).

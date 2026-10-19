@@ -14,10 +14,8 @@ export default function SourceStep({ d }: { d: BorrowerDetail }) {
   const go = (t: string) => setSp(t === 'collector' ? {} : { tab: t }, { replace: true })
   return (
     <div className="stack">
-      <div className="row" role="tablist" aria-label="Source">
-        {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn small${tab === k ? ' primary' : ''}`} onClick={() => go(k)}>{l}
-          {k === 'collector' && d.steps.collect && <span aria-hidden> ✓</span>}{k === 'seeker' && d.steps.seek && <span aria-hidden> ✓</span>}</button>)}
-      </div>
+      <div className="screenhead"><span className="crumb">Source · {TABS.find(t => t[0] === tab)?.[1]}</span>
+        <h1>{tab === 'collector' ? 'Collector' : tab === 'seeker' ? 'Seeker' : 'Sources & files'}</h1></div>
       {tab === 'collector' && <Collector d={d} goSeek={() => go('seeker')} />}
       {tab === 'seeker' && <Seeker d={d} />}
       {tab === 'files' && <Files d={d} />}
@@ -111,7 +109,7 @@ function Collector({ d, goSeek }: { d: BorrowerDetail; goSeek: () => void }) {
             </div>
           </section>
           {view && <SourceData bid={d.id} source={view} onClose={() => setView('')} />}
-          <p className="row"><button className="btn" onClick={goSeek}>Next: Seeker →</button><Link to={`/borrowers/${d.id}/assess`} className="linkbtn">Skip to Assess</Link></p>
+          <p className="row"><button className="btn" onClick={goSeek}>Next: Seeker →</button><Link to={`/b/${d.id}/p1/assess`} className="linkbtn">Skip to Assess</Link></p>
         </>}
       </div>
     </div>
@@ -191,7 +189,7 @@ function Seeker({ d }: { d: BorrowerDetail }) {
               </table>
             </div>
           </section>
-          <p><Link to={`/borrowers/${d.id}/assess`} className="btn primary">Next: Assess →</Link></p>
+          <p><Link to={`/b/${d.id}/p1/assess`} className="btn primary">Next: Assess →</Link></p>
         </>}
       </div>
     </div>

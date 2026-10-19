@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 
-from .api import auth, borrowers, uploads
+from .api import auth, borrowers, uploads, workspace
 from .config import get_settings
 from .db import SessionLocal, engine
 from .models import User
@@ -33,6 +33,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in get_setting
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth.router)
 app.include_router(uploads.router)
+app.include_router(workspace.router)  # before borrowers: its /borrowers/{id}/{step} would match first
 app.include_router(borrowers.router)
 
 

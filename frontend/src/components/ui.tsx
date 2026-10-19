@@ -32,7 +32,7 @@ export function Table({ head, rows, mono = [], empty = 'Nothing to show.' }: { h
 
 export function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null
-  return <div className="note bad" role="alert">{error instanceof Error ? error.message : String(error)}</div>
+  return <div className="callout bad" role="alert">{error instanceof Error ? error.message : String(error)}</div>
 }
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
@@ -49,3 +49,25 @@ export function Toaster() {
 }
 
 export const when = (iso: string) => new Date(iso).toLocaleString('en-SG', { dateStyle: 'medium', timeStyle: 'short' })
+
+export function Battery({ stages, small }: { stages: { label: string; pct: number }[]; small?: boolean }) {
+  const last = stages[stages.length - 1].pct
+  return (
+    <div className={`battery${small ? ' sm' : ''}`} role="img" aria-label={stages.map(x => `${x.label} ${x.pct}%`).join(', ') + `, not confident ${100 - last}%`}>
+      <div className="cell">
+        {stages.map((x, i) => { const gain = i ? Math.max(0, x.pct - stages[i - 1].pct) : x.pct
+          return gain ? <i key={i} className={`g g${i}`} style={{ width: `${gain}%` }} title={`${x.label}${i ? ' +' + gain : ' ' + x.pct}%`}>{gain >= 6 ? (i ? '+' + gain : x.pct + '%') : ''}</i> : null })}
+        {last < 100 && <i className="r" style={{ width: `${100 - last}%` }}>{100 - last >= 6 ? `${100 - last}%` : ''}</i>}
+      </div><span className="nub" />
+    </div>
+  )
+}
+
+export function MiniBar({ pct, tone }: { pct: number; tone?: string }) {
+  return <div className="minibar wide"><i style={{ width: `${Math.max(0, Math.min(100, pct))}%`, ...(tone ? { background: `var(--${tone})` } : {}) }} /></div>
+}
+
+export function Bold({ text }: { text: string }) {
+  // **bold** segments from server-written headlines
+  return <>{text.split(/(\*\*[^*]+\*\*)/).map((s, i) => s.startsWith('**') ? <b key={i}>{s.slice(2, -2)}</b> : s)}</>
+}

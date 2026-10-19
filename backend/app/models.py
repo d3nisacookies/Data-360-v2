@@ -109,3 +109,15 @@ class Setting(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(120))
     value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Workspace(Base):
+    """Per-borrower working state for the later steps: the credit memo (step 5), Phase 2 and Phase 3."""
+    __tablename__ = "workspaces"
+    __table_args__ = (UniqueConstraint("borrower_id", "key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    borrower_id: Mapped[int] = mapped_column(ForeignKey("borrowers.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(40))  # memo | p2 | p3
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

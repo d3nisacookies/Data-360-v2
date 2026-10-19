@@ -38,6 +38,7 @@ class StepRun(BaseModel):
     outputs: list[str] | None = None     # collect: credit-memo outputs needed
     attributes: list[str] | None = None  # seek: attributes to find
     requested: list[str] | None = None   # seek: outside sources requested
+    extra: list[str] | None = None       # assess/clean/normalise: items added from the pick list
 
 
 class SheetPick(BaseModel):

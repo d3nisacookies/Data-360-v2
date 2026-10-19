@@ -35,6 +35,8 @@ export const api = {
   get: <T>(p: string) => fetch(`/api${p}`, { headers: headers() }).then(r => handle<T>(r)),
   post: <T>(p: string, body?: unknown) =>
     fetch(`/api${p}`, { method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body ?? {}) }).then(r => handle<T>(r)),
+  put: <T>(p: string, body: unknown) =>
+    fetch(`/api${p}`, { method: 'PUT', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) }).then(r => handle<T>(r)),
   patch: <T>(p: string, body: unknown) =>
     fetch(`/api${p}`, { method: 'PATCH', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) }).then(r => handle<T>(r)),
   del: <T>(p: string) => fetch(`/api${p}`, { method: 'DELETE', headers: headers() }).then(r => handle<T>(r)),
@@ -80,6 +82,7 @@ export interface AssessResult {
   dims: Record<string, Dim>; counts: { records: number; elements: number; sources: number; removed: number }
   provider_flags: Record<string, number>; golden: Record<string, Golden | null>
   inputs?: { collector: boolean; seeker: boolean; scope: string[] | null }
+  crit?: Record<string, Crit>
 }
 export interface LogRow { n: number; action: string; record: string; field: string; from: string; to: string; reason: string; source: string; by: string }
 export interface Escalation { item: string; why: string; owner: string; due: string }
@@ -87,13 +90,17 @@ export interface CleanResult {
   selected: string[]; log: LogRow[]; escalations: Escalation[]; kept: number; total: number; version: string
   summary: Record<string, { n: number; text: string; rows?: { field: string; status: string; golden: string | null; source: string | null; detail: string }[]; decisions?: { field: string; chosen: string; why: string; replaced: string[] }[] }>
   golden: Record<string, Golden | null>
+  picks?: Record<string, { text: string }>
 }
-export interface NormResult { selected: string[]; version: string; out: Record<string, { n: number; text: string; head: string[]; rows: (string | number)[][] }> }
+export interface NormResult { picks?: Record<string, { text: string }>; selected: string[]; version: string; out: Record<string, { n: number; text: string; head: string[]; rows: (string | number)[][] }> }
 export interface Run<T> { id: number; step: string; at: string; by: string | null; params: unknown; result: T; stale: boolean; stale_reason?: string }
+export interface PickGroup { cat: string; items: { n: string; d: string }[] }
+export interface Crit { score: number | null; basis: string; needs: string; status: string; cat: string }
 export interface PickCat { cat: string; use: string; src: string[]; attrs: string[] }
 export interface Meta {
   assess: Record<string, string>; clean: Record<string, string>; normalise: Record<string, string>; reference_date: string
   outputs: Record<string, string>; standard_outputs: string[]; attributes: Record<string, string>; standard_attributes: string[]; pick_sources: PickCat[]
+  picks: Record<'assess' | 'clean' | 'normalise', PickGroup[]>
 }
 export interface CovGroup { label: string; source: string; n: number; in_scope: boolean; uploaded: boolean; held_elsewhere: number; field?: string }
 export interface Coverage { output: string; desc: string; status: 'ok' | 'part' | 'none'; groups: CovGroup[]; hit: number; total: number; addable: string[]; missing: string[] }
@@ -123,3 +130,46 @@ export interface UploadRow {
   preview?: { headers: string[]; rows: (string | null)[][] } | null
 }
 export interface FieldDef { key: string; label: string; type: string; critical: boolean; section: string; synonyms: string[] }
+
+// ---------- later steps (memo, Phase 2, Phase 3): server-described screens ----------
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type Cell = string | number | null | { t: string; [k: string]: any }
+export interface Block { type: string; [k: string]: any }
+export interface Foot {
+  hint?: string; next?: { label: string; step: string }; buttons?: Cell[]
+  download?: { label: string; href: string }; downloads?: { label: string; href: string; primary?: boolean }[]
+  approve?: { action: string; label: string; placeholder: string }
+}
+export interface Sec { title: string; sub: string; blocks: Block[]; foot?: Foot | null; id?: string | null }
+export interface Battery { pct: number; rating: Rating; cap: string; provisional: boolean; stages: { label: string; pct: number }[]; breakdown: { head: string[]; rows: string[][] } | null }
+export interface StepPill { k?: string; go?: string; n: string; t: string; d: string; done: boolean; part: boolean }
+export interface Overview {
+  borrower: { id: number; name: string; facility_ids: string[] }; gates: { p1: boolean; p2: boolean; p3: boolean; open: Record<string, boolean> }
+  kpis: { v: string; k: string; sm: boolean }[]; phases: { id: number; steps: StepPill[] }[]; battery: Battery | null; rules_on: number
+}
+export interface SetupList { std: { name: string; desc: string; on: boolean }[]; extra: { name: string; desc: string }[]; pick: string[]; count: string; locked: boolean }
+export interface MemoView {
+  available: boolean; why?: string; scope?: string; status?: string; version?: string; decision?: string; retained?: any
+  setup?: { core: { no: string; t: string; d: string; on: boolean }[]; extra: { no: string; t: string; d: string }[]; pick: { no: string; t: string }[]; count: string
+    stages: { k: number; n: string; t: string; d: string; done: boolean }[]; done: number }
+  sections?: Sec[]
+}
+export interface PhaseView {
+  available: boolean; why?: string; step: string; nav: { k: string; n: string; t: string; can: boolean; done: boolean; why?: string }[]
+  crumb: string; h1: string; lbl?: string; setup: SetupList; scope: string; verb: string; sections: Sec[]
+  approved?: { by: string; at: string } | null; track?: Block; init?: string; done?: string | null; has_result?: boolean
+  foot?: { hint: string; block: string; plan: boolean }; plan?: Sec
+}
+export interface Policy { id: string; t: string; d: string; src: string; g: string }
+export interface Policies { groups: { name: string; rules: Policy[] }[]; tested: string[]; on: string[]; all: string[] }
+export interface FixView {
+  available: boolean; why?: string; empty?: boolean; c: string; headline: string; kpis: Block
+  groups: { label: string; tiles: { k: string; name: string; worst: string; open: number; done: number; mix: { s: string; pct: number }[]; on: boolean }[] }[]
+  lanes: { n: string; w: string; count: number; cards: { k: string; name: string; what: string; due: string }[] }[]
+  detail: { k: string; name: string; folder: string; sources: string[]; type: string; types: { k: string; t: string; n: number }[]; table: Block } | null
+}
+export interface ExecReport {
+  callout: { tone: string; text: string }; battery: { pct: number; stages: { label: string; pct: number }[] } | null; bullets: string[]; actions: [string, string][]; file: string
+  tasks: { cat: any[]; own: { name: string; kind: string; owner: string; steward: string; assigned: string }[]; flow: { name: string; steps: string[]; method: string }[]
+    ref: { name: string; cycle: string; last: string | null; age: number | null; stale: number; status: string; basis: string }[]; n: number; el: number; gaps: number; owner_choices: string[] }
+}

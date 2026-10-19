@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..db import get_db
-from ..engine import assess as A, clean as C, normalise as N, source as SRC
+from ..engine import assess as A, clean as C, normalise as N, picks as PK, source as SRC
 from ..engine.core import apply_changes
 from ..engine.export import data_pack
 from ..engine.reference import LABEL, VALUE_FIELDS
-from ..models import Borrower, Observation, Run, User
+from ..models import Borrower, Observation, Run, Setting, User
 from ..schemas import StepRun
 from ..services import context, current_dataset, data_version, latest_run, load_dataset, ref_date, scope, step_status, uploads_for
 from ..security import can_edit, current_user
@@ -49,7 +49,7 @@ def meta(_: User = Depends(current_user)):
     return {"assess": A.DIMS, "clean": C.ACTIONS, "normalise": N.ITEMS, "reference_date": ref_date().isoformat(),
             "outputs": {k: v["desc"] for k, v in SRC.OUTPUTS.items()}, "standard_outputs": SRC.STANDARD_OUTPUTS,
             "attributes": {k: v.get("note", "") for k, v in SRC.ATTRS.items()}, "standard_attributes": SRC.STANDARD_ATTRS,
-            "pick_sources": SRC.PICK_CATS}
+            "pick_sources": SRC.PICK_CATS, "picks": PK.catalogue()}
 
 
 @router.get("/borrowers")
@@ -127,14 +127,19 @@ def run_step(bid: int, step: str, body: StepRun, db: Session = Depends(get_db), 
         result = SRC.seek(raw, body.attributes, body.requested)
     elif step == "clean":
         raw, _, _ = current_dataset(db, b, ref)
-        result = C.clean(raw, body.selected, user=user.email, ctx=ctx)
+        result = C.clean(raw, body.selected, user=user.email, ctx=ctx, extra=body.extra)
     elif step == "assess":
         raw, cleaned, _ = current_dataset(db, b, ref)
         result = A.assess(raw, cleaned, body.selected, ctx)
+        full = load_dataset(db, b, ref)
+        owners = (db.scalar(select(Setting).where(Setting.key == "source_owners")) or Setting(value={})).value
+        result["crit"] = {n: PK.score_crit(n, cleaned or raw, full, {**ctx, "owners": owners}) for n in dict.fromkeys(body.extra or []) if n in PK.CRIT}
     else:
         raw, cleaned, cr = current_dataset(db, b, ref)
         ar = latest_run(db, b.id, "assess")
         result = N.normalise(cleaned or raw, ar.result if ar else None, cr.result if cr and cleaned else None, body.selected)
+        nb = db.scalar(select(func.count()).select_from(Borrower))
+        result["picks"] = {n: PK.norm_pick(n, cleaned or raw, result["out"], ar.result if ar else None, nb) for n in dict.fromkeys(body.extra or []) if n in PK.NORM_ACT}
     if not raw.records and not raw.elements:
         raise HTTPException(400, "No data for this borrower yet")
     r = Run(borrower_id=b.id, step=step, params=body.model_dump(), result=result, data_version=data_version(db, b.id), created_by=user.id)

@@ -27,7 +27,7 @@ def business_days(start: date, n: int) -> str:
     return d.isoformat()
 
 
-def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: dict | None = None) -> dict:
+def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: dict | None = None, extra: list[str] | None = None) -> dict:
     selected = [a for a in (selected or list(ACTIONS)) if a in ACTIONS] or list(ACTIONS)
     ds = apply_changes(raw, {})
     ds.version = raw.version
@@ -128,7 +128,7 @@ def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: 
         for f in CRITICAL:
             g = G.get(f)
             if not g:
-                rows.append({"field": LABEL[f], "status": "Not available", "golden": None, "source": None, "detail": "No value in any source"})
+                rows.append({"key": f, "field": LABEL[f], "status": "Not available", "golden": None, "source": None, "detail": "No value in any source"})
                 escalate(f"Obtain {LABEL[f]} for {ds.borrower}", "Critical field not held in any source", OWNER.get(f, "Relationship manager"), 10)
                 continue
             ext_bad = [r for r in ds.live() if differs(f, r.fields.get(f), g["value"])]
@@ -136,7 +136,7 @@ def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: 
             int_bad = [e for e in int_vals if differs(f, e.value, g["value"])]
             held = len([r for r in ds.live() if not is_blank(r.fields.get(f))]) + len(int_vals)
             ok = not ext_bad and not int_bad
-            rows.append({"field": LABEL[f], "status": "Validated" if ok else "Failed", "golden": g["display"], "source": g["source"],
+            rows.append({"key": f, "field": LABEL[f], "status": "Validated" if ok else "Failed", "golden": g["display"], "source": g["source"],
                          "detail": f"{held} values agree" if ok else f"{len(ext_bad)} record and {len(int_bad)} internal values disagree ("
                                    + ", ".join(sorted({r.source for r in ext_bad} | {e.source for e in int_bad})) + ")"})
             if not ok:
@@ -167,7 +167,13 @@ def clean(raw: Dataset, selected: list[str] | None = None, user: str = BY, ctx: 
         k = sum(1 for r in stale if r.source == s)
         escalate(f"Bring-down data from {s}", f"{k} record(s) older than {ds.stale_days} days or flagged stale", "Data owner · " + s, 5)
 
+    # further actions picked from the list
+    from .picks import CLEAN_ACT, clean_pick
+    picks = {}
+    for name in [x for x in dict.fromkeys(extra or []) if x in CLEAN_ACT]:
+        picks[name] = clean_pick(name, ds, golden(ds), {**(ctx or {}), "user": user}, add, escalate)
+
     cleaned = apply_changes(raw, changes)
-    return {"selected": selected, "log": log, "escalations": esc, "summary": summary, "changes": changes,
+    return {"selected": selected, "extra": list(picks), "picks": picks, "log": log, "escalations": esc, "summary": summary, "changes": changes,
             "golden": golden(cleaned), "kept": len(cleaned.live()), "total": len(raw.records),
             "version": cleaned.version}
