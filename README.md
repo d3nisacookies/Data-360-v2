@@ -98,6 +98,10 @@ Every value is stored in one long table (`observations`), whatever layout the fi
 
 `seed/sample-files/other-layouts` contains a CSV with entirely different column names, which shows the mapping at work.
 
+### Ideal data set for comparison
+
+`seed/ideal-files` has the same borrowers, files and layouts as `seed/sample-files`, with the data put right: correct, complete, current and consistent across every source. Load it into a reset instance to compare: data confidence before Clean goes from 78–82 on the fragmented set to 97, the Seeker finds 11 of 13 attributes with no conflicts, and the draft memo moves from Refer to Approve With Conditions. `seed/ideal-files/README.md` lists every difference and why the score stops at 97. Regenerate it with `python3 seed/make_ideal.py`.
+
 ### How the engine decides
 
 - **Source: Collector.** You choose which uploaded sources are in scope and which credit-memo outputs you need (borrower profile, facility summary, KYC and sanctions, and so on). It shows the coverage of each output: which evidence is held, where, and what is missing. It can also add an out-of-scope source and run again. Assess, Clean and Normalise then use only the sources in scope.
