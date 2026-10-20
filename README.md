@@ -114,6 +114,36 @@ Every value is stored in one long table (`observations`), whatever layout the fi
 
 ---
 
+## The assistant ("Ask Data 360")
+
+A chat panel on every page answers questions about the selected client (the credit memo decision, which sources disagree, which files to fix first) and general credit and regulatory questions. It looks facts up through server-side lookups; it never sees the database directly.
+
+**Controls**
+
+- **Off for every client until an administrator switches it on** (in the panel). The switch, and every question, are recorded in the audit log.
+- **Redaction:** client names, identifiers, people's names, emails and phone numbers are replaced with tokens such as `[CLIENT-1]` before anything reaches the model, and put back in the answer. Personal-data values are masked in lookups. Turn off with `AI_REDACT=false` only for a model that runs on your own servers.
+- **Provider and region set on the server only.** No key ever reaches the browser.
+
+**Use the free local model (default)**
+
+```bash
+docker compose --profile ai up -d   # starts Ollama and downloads qwen2.5:7b (about 5 GB) the first time
+```
+
+It needs about 8 GB of free memory and answers in 10 to 60 seconds on a CPU. On a smaller machine set `AI_MODEL=qwen2.5:3b` in `.env`, then run the command again.
+
+**Use a cloud provider instead** (set in `.env`, then `docker compose up -d`):
+
+| `AI_PROVIDER` | Also set | Credentials |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | the key |
+| `bedrock` | `AI_MODEL` (the model ID enabled in your AWS account), `AWS_REGION` | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or an instance role |
+| `vertex` | `AI_MODEL`, `VERTEX_PROJECT`, `VERTEX_REGION` | Google application default credentials (mount a service-account file and set `GOOGLE_APPLICATION_CREDENTIALS`) |
+
+Pick a region your bank approves (for example `ap-southeast-1` or `asia-southeast1` for Singapore). Set `AI_PROVIDER=off` to remove the assistant entirely.
+
+---
+
 ## Tests
 
 ```bash
@@ -138,15 +168,10 @@ GitHub Actions runs on every push:
 ## Security notes
 
 - Change `JWT_SECRET` and `ADMIN_PASSWORD` in `.env` before anyone else can reach the app. In production mode, the API will not start with the default secret.
-- Uploaded files stay inside the `uploads` Docker volume, and data stays in the `db` volume. Nothing is sent outside the machine.
+- Uploaded files stay inside the `uploads` Docker volume, and data stays in the `db` volume. Nothing is sent outside the machine unless you choose a cloud provider for the assistant and switch it on for a client; even then names and identifiers are redacted first.
 - `.env` is excluded from git (in `.gitignore`), so never commit real secrets.
 
 ## Roadmap
 
-1. **AI assistant**, turned off by default, with:
-   - a free local model (Ollama) as the default provider;
-   - optional providers set in the config file: Anthropic, AWS Bedrock or Google Vertex, in a region the bank approves;
-   - an on/off switch per client;
-   - redaction of names and IDs before anything leaves the server.
-2. **Memo versioning**: keep earlier retained memos when inputs change, lock critical rules, and freeze the rule set with each memo.
-3. **Background jobs and object storage** (Redis worker, S3/MinIO) for large folders, connectors (SharePoint, S3, databases), and bank single sign-on (OIDC, Azure AD or Okta).
+1. **Memo versioning**: keep earlier retained memos when inputs change, lock critical rules, and freeze the rule set with each memo.
+2. **Background jobs and object storage** (Redis worker, S3/MinIO) for large folders, connectors (SharePoint, S3, databases), and bank single sign-on (OIDC, Azure AD or Okta).

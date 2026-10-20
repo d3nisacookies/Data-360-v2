@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth'
+import Assistant from './Assistant'
 import { PoliciesFab } from './Shell'
 import { Toaster } from './ui'
 
@@ -35,6 +36,7 @@ export default function Layout() {
         <main><Outlet /></main>
       </div>
       <PoliciesFab />
+      <Assistant />
       <Toaster />
     </>
   )
