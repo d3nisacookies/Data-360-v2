@@ -126,3 +126,44 @@ def test_openrouter_is_picked_from_its_key(client, h, monkeypatch):
     monkeypatch.setattr(PV.httpx, "post", lambda *a, **k: httpx.Response(429, json={"error": {"message": "Rate limit exceeded: free-models-per-day"}}))
     r = client.post("/api/assistant/chat", json={"borrower_id": bid, "messages": [{"role": "user", "content": "hi"}]}, headers=h)
     assert r.status_code == 503 and "daily limit" in r.json()["detail"]
+
+
+def test_odd_openrouter_replies_never_crash(client, h, monkeypatch):
+    """Shapes OpenRouter and its free models really send: string errors, errors inside a 200, non-JSON
+    bodies, tool arguments as objects, content as parts, dropped connections."""
+    import httpx
+    s = PV.get_settings()
+    monkeypatch.setattr(s, "ai_provider", "auto")
+    monkeypatch.setattr(s, "openrouter_api_key", "sk-or-test")
+    bid = borrower_id(client, h, "HarbourVest")
+    client.put(f"/api/assistant/clients/{bid}", json={"enabled": True}, headers=h)
+    ask = {"borrower_id": bid, "messages": [{"role": "user", "content": "What is happening here"}]}
+    cases = [
+        httpx.Response(400, json={"error": "Provider returned error"}),
+        httpx.Response(200, json={"error": {"message": "Provider returned error", "code": 502, "metadata": {"raw": "upstream timeout"}}}),
+        httpx.Response(200, text="<html>Bad gateway</html>"),
+        httpx.Response(200, json={"choices": []}),
+        httpx.Response(200, json={"choices": [{"message": {"content": [{"type": "text", "text": "Hi [CLIENT-1]"}]}}]}),
+    ]
+    for resp in cases:
+        monkeypatch.setattr(PV.httpx, "post", lambda *a, _r=resp, **k: _r)
+        r = client.post("/api/assistant/chat", json=ask, headers=h)
+        assert r.status_code in (200, 503), (resp.text, r.status_code, r.text)
+        assert isinstance(r.json().get("answer", r.json().get("detail")), str)
+    assert r.json()["answer"] == "Hi HarbourVest"
+
+    n = {"i": 0}
+
+    def tool_args_as_object(*a, **k):
+        n["i"] += 1
+        if n["i"] == 1:
+            return httpx.Response(200, json={"choices": [{"message": {"content": None, "tool_calls": [{"id": "c1", "function": {"name": "get_overview", "arguments": {}}}]}}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Done"}}]})
+    monkeypatch.setattr(PV.httpx, "post", tool_args_as_object)
+    assert client.post("/api/assistant/chat", json=ask, headers=h).json()["answer"] == "Done"
+
+    def dropped(*a, **k):
+        raise httpx.RemoteProtocolError("Server disconnected")
+    monkeypatch.setattr(PV.httpx, "post", dropped)
+    r = client.post("/api/assistant/chat", json=ask, headers=h)
+    assert r.status_code == 503 and "connection" in r.json()["detail"].lower()

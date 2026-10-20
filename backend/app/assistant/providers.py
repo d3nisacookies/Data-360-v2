@@ -74,6 +74,34 @@ def chat(system: str, messages: list[dict], tools: list[dict], run_tool) -> Answ
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
 
+def _json(r):
+    try:
+        return r.json()
+    except ValueError:
+        return None
+
+
+def _err_text(j) -> str:
+    """The error message from an OpenAI-style body, whatever shape it comes in."""
+    if not isinstance(j, dict) or not j.get("error"):
+        return ""
+    e = j["error"]
+    if isinstance(e, dict):
+        msg = e.get("message") or e.get("code") or "the model returned an error"
+        meta = e.get("metadata") or {}
+        raw = meta.get("raw") if isinstance(meta, dict) else None
+        return f"{msg} ({str(raw)[:120]})" if raw else str(msg)
+    return str(e)
+
+
+def _content_text(c) -> str:
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):  # some models return content parts
+        return "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in c)
+    return ""
+
+
 def _openai(model, system, messages, tools, run_tool, openrouter=False) -> Answer:
     s = get_settings()
     base, key, name, env = ((OPENROUTER_URL, s.openrouter_api_key, "OpenRouter", "OPENROUTER_API_KEY") if openrouter
@@ -95,12 +123,11 @@ def _openai(model, system, messages, tools, run_tool, openrouter=False) -> Answe
             raise AIError(f"Can't reach {name} ({base}) from the server. Check the network.")
         except httpx.TimeoutException:
             raise AIError("The AI service took too long to answer. Try again.")
+        except httpx.HTTPError as e:
+            raise AIError(f"The connection to {name} failed ({e.__class__.__name__}). Try again.")
+        j = _json(r)
+        err = _err_text(j)
         if r.status_code >= 300:
-            err = ""
-            try:
-                err = (r.json().get("error") or {}).get("message", "")
-            except ValueError:
-                pass
             if r.status_code == 401:
                 raise AIError(f"The {name} key was rejected. Check {env} in .env.")
             if r.status_code == 402:
@@ -111,20 +138,29 @@ def _openai(model, system, messages, tools, run_tool, openrouter=False) -> Answe
             if r.status_code == 404:
                 raise AIError(f"The model {model} is not available for this key. Set AI_MODEL in .env.")
             raise AIError(f"The AI service returned an error ({r.status_code}). {err[:200]}")
-        j = r.json()
-        if j.get("error"):  # OpenRouter can return 200 with an error from the upstream model
-            raise AIError(f"{name}: {str((j['error'] or {}).get('message', 'the model returned an error'))[:200]}")
-        m = (j.get("choices") or [{}])[0].get("message") or {}
-        calls = m.get("tool_calls") or []
+        if not isinstance(j, dict):
+            raise AIError(f"{name} sent a reply Data360 could not read. Try again.")
+        if err:  # OpenRouter can return 200 with an error from the upstream model
+            raise AIError(f"{name}: {err[:200]}. Try again; with openrouter/free another model may answer.")
+        choices = j.get("choices") or [{}]
+        m = (choices[0] if isinstance(choices[0], dict) else {}).get("message") or {}
+        calls = [c for c in (m.get("tool_calls") or []) if isinstance(c, dict)]
+        content = _content_text(m.get("content"))
         if not calls:
-            return Answer(m.get("content") or "(No answer.)", used)
-        msgs.append({"role": "assistant", "content": m.get("content") or "", "tool_calls": calls})
+            return Answer(content or "(No answer. Try asking again.)", used)
+        msgs.append({"role": "assistant", "content": content, "tool_calls": calls})
         for c in calls:
             fn = c.get("function") or {}
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except ValueError:
-                args = {}
+            raw = fn.get("arguments")
+            if isinstance(raw, dict):
+                args = raw
+            else:
+                try:
+                    args = json.loads(raw or "{}")
+                except (TypeError, ValueError):
+                    args = {}
+                if not isinstance(args, dict):
+                    args = {}
             used.append(fn.get("name", ""))
             msgs.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": run_tool(fn.get("name", ""), args)})
     return Answer("I looked up several things but could not finish the answer. Please ask a narrower question.", used)

@@ -1,6 +1,7 @@
 """Assistant endpoints: status, the per-client switch, and chat."""
 from __future__ import annotations
 
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,7 @@ from ..models import Borrower, User
 from ..security import current_user, is_admin
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
+log = logging.getLogger("data360.assistant")
 
 
 class Msg(BaseModel):
@@ -102,6 +104,9 @@ def chat(body: ChatIn, db: Session = Depends(get_db), user: User = Depends(curre
         ans = PV.chat(system, msgs, TL.TOOLS, run_tool)
     except PV.AIError as e:
         raise HTTPException(503, str(e))
+    except Exception as e:  # noqa: BLE001 - never a bare 500 in the chat panel
+        log.exception("assistant chat failed")
+        raise HTTPException(502, f"The assistant hit an unexpected error ({e.__class__.__name__}). The details are in the API log.")
     audit.log(db, user, "ai.ask", b.name, provider=d["provider"], model=d["model"], redacted=d["redaction"], tools=ans.tools,
               seconds=round(time.time() - t0, 1), question_chars=len(body.messages[-1].content))
     db.commit()
