@@ -177,5 +177,10 @@ test('upload, then all three phases end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.locator('.polfab .pcount')).toHaveText('20')
 
+  // reset one client: every phase starts again, files stay
+  await page.getByRole('button', { name: 'Reset this client' }).click()
+  await expect(page.locator('.dkpis')).toContainText('0 of 5')
+  await expect(page.locator('.phase.p2')).toContainText('Locked')
+
   expect(errors).toEqual([])
 })

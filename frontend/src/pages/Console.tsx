@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type Overview, type StepState } from '../api'
 import { useAuth } from '../auth'
 import { ClientPicker, ConfidenceBar, lastClient, rememberClient, TopBar, useBorrowers } from '../components/Shell'
-import { ErrorNote, RateChip, Spinner } from '../components/ui'
+import { ErrorNote, RateChip, Spinner, toast } from '../components/ui'
 
 const LOCK = <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
 const PHASES = [
@@ -16,7 +16,8 @@ const PHASES = [
 export default function Console() {
   const [sp] = useSearchParams()
   const nav = useNavigate()
-  const { canEdit } = useAuth()
+  const { canEdit, user } = useAuth()
+  const qc = useQueryClient()
   const list = useBorrowers()
   const fromUrl = sp.get('b') ? Number(sp.get('b')) : null
   const known = (id: number | null) => id !== null && !!list.data?.some(b => b.id === id)
@@ -25,6 +26,11 @@ export default function Console() {
   const q = useQuery({ queryKey: ['overview', bid], queryFn: () => api.get<Overview>(`/borrowers/${bid}/overview`), enabled: !!bid })
   const O = q.data
   const pick = (id: number) => { rememberClient(id); nav(`/console?b=${id}`) }
+  const reset = async () => {
+    const name = list.data?.find(b => b.id === bid)?.name
+    if (!bid || !window.confirm(`Reset ${name}? This clears every step result, the credit memo and Phases 2 and 3 for this client. Uploaded files are kept.`)) return
+    try { await api.post(`/borrowers/${bid}/reset`); await qc.invalidateQueries(); toast(`${name} reset: start again from Phase 1`) } catch (e) { toast(String(e)) }
+  }
 
   if (list.isLoading) return <Spinner />
   if (!list.data?.length) return (
@@ -36,7 +42,8 @@ export default function Console() {
   return (
     <div>
       <TopBar back={{ to: '/', label: '← About' }} sub="Three-phase data transformation framework"
-        right={<>{bid && <Link className="btn report" to={`/b/${bid}/fix`}>Fix plan</Link>}<span className="dclient">Client <ClientPicker id={bid} onPick={pick} /></span></>} />
+        right={<>{bid && user?.role === 'admin' && <button type="button" className="btn" onClick={reset}>Reset this client</button>}
+          {bid && <Link className="btn report" to={`/b/${bid}/fix`}>Fix plan</Link>}<span className="dclient">Client <ClientPicker id={bid} onPick={pick} /></span></>} />
       <section className="dhero"><h1>From understanding the data landscape to trusted intelligence</h1>
         <p>Work through the phases in order. Each phase unlocks when the one before it is cleared.</p></section>
       <ErrorNote error={q.error} />

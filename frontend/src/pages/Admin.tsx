@@ -46,6 +46,7 @@ export default function Admin() {
           <ErrorNote error={add.error || patch.error} />
         </div>
       </section>
+      <StartAgain />
       <section className="panel">
         <div className="ph"><h2>Audit log</h2><span className="hint">Every sign-in, upload, run, export and user change</span></div>
         <div className="pb">{audit.isLoading ? <Spinner /> : <Table head={['When', 'User', 'Action', 'Target', 'Details']} mono={[4]}
@@ -53,5 +54,30 @@ export default function Admin() {
             Object.entries(e.details).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')])} />}</div>
       </section>
     </div>
+  )
+}
+
+function StartAgain() {
+  const qc = useQueryClient()
+  const [files, setFiles] = useState(false)
+  const [settings, setSettings] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const go = async () => {
+    const what = files ? 'every result, every uploaded file and the data read from them' : 'every step result, credit memo and Phase 2 and 3 work (uploaded files are kept)'
+    if (!window.confirm(`Start again for all clients? This deletes ${what}${settings ? ', and resets rules, source owners and assistant switches' : ''}. Users and the audit log are kept. This cannot be undone.`)) return
+    setBusy(true)
+    try { await api.post('/reset', { uploads: files, settings }); await qc.invalidateQueries(); toast(files ? 'Everything cleared: upload files to begin' : 'All results cleared: start again from Phase 1') }
+    catch (e) { toast(String(e)) } finally { setBusy(false) }
+  }
+  return (
+    <section className="panel">
+      <div className="ph"><h2>Start again</h2><span className="hint">For tests and demos. To reset one client, use "Reset this client" on the dashboard.</span></div>
+      <div className="pb stack">
+        <p className="hint">Clears the results of every step for every client, so all confidence scores, memos and phases start from scratch.</p>
+        <label className="row"><input type="checkbox" checked={files} onChange={e => setFiles(e.target.checked)} /> Also delete uploaded files and their data</label>
+        <label className="row"><input type="checkbox" checked={settings} onChange={e => setSettings(e.target.checked)} /> Also reset Rules &amp; policies, source owners and assistant switches</label>
+        <div><button type="button" className="btn danger" disabled={busy} onClick={go}>{busy ? 'Clearing…' : 'Reset all clients'}</button></div>
+      </div>
+    </section>
   )
 }
