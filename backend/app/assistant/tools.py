@@ -118,16 +118,5 @@ def run(name: str, args: dict, ctx: dict, extra: dict):
     return f"Unknown tool {name}"
 
 
-def context_dump(ctx, extra) -> dict:
-    """Everything the tools would return, for models that cannot call tools."""
-    out = {}
-    for t in ("get_overview", "get_golden_record", "get_credit_memo", "get_issues_and_fixes"):
-        try:
-            out[t] = run(t, {}, ctx, extra)
-        except Exception as e:  # noqa: BLE001 - a missing step should not stop the answer
-            out[t] = f"unavailable ({e.__class__.__name__})"
-    return out
-
-
 def safe_name(s: str) -> str:
     return re.sub(r"[^a-z_]", "", s.lower())

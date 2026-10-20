@@ -1,5 +1,5 @@
-// "Ask Data 360": a chat panel about the selected client. The model runs behind the API (local
-// Ollama by default); the browser never holds a key, and names and IDs are redacted on the server.
+// "Ask Data 360": a chat panel about the selected client. The model is called by the API (OpenRouter,
+// OpenAI or another provider set in .env); the browser never holds a key, and names and IDs are redacted on the server.
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
@@ -8,7 +8,7 @@ import { lastClient } from './Shell'
 import { toast } from './ui'
 
 interface Status {
-  provider: string; model: string; label: string; configured: boolean; missing: string; local: boolean; redaction: boolean
+  provider: string; model: string; label: string; configured: boolean; missing: string; redaction: boolean
   borrower: { id: number; name: string } | null; enabled: boolean; can_toggle: boolean
 }
 interface Turn { role: 'user' | 'assistant'; content: string; err?: boolean; pending?: boolean; tools?: string[] }
@@ -100,11 +100,11 @@ export default function Assistant() {
         {!bid ? <div className="aiwelcome"><b>Choose a client first</b><span className="hint">Open a client in the console; the assistant answers about that client.</span></div>
           : S && !S.configured ? <div className="aikey"><b>The assistant is not set up on this server</b><span className="hint">{S.missing || 'AI_PROVIDER is off.'}</span></div>
           : S && !S.enabled ? <div className="aikey"><b>Switched off for {S.borrower?.name}</b>
-              <span className="hint">Each client's data is only sent to the assistant once an administrator switches it on.{S.redaction ? ' Names, identifiers and personal details are replaced with tokens first.' : ''}{S.local ? ' The model runs on this server.' : ` Answers come from ${S.label}.`}</span>
+              <span className="hint">Each client's data is only sent to the assistant once an administrator switches it on.{S.redaction ? ' Names, identifiers and personal details are replaced with tokens first.' : ''}{` Answers come from ${S.label}.`}</span>
               {S.can_toggle ? <button type="button" className="btn primary small" onClick={() => toggle(true)}>Switch on for {S.borrower?.name}</button> : <span className="hint">Ask an administrator to switch it on.</span>}</div>
           : !T.length ? <div className="aiwelcome"><b>Ask about the data or credit topics</b><span className="hint">Answers use the current results for {S?.borrower?.name || 'this client'}.</span>
               <div className="aisugg">{SUGGEST.map(s => <button key={s} type="button" className="chipbtn" disabled={!ready} onClick={() => ask(s)}>{s}</button>)}</div></div>
-          : T.map((t, i) => <div key={i} className={`aimsg ${t.role}${t.err ? ' err' : ''}`}>{t.role === 'user' ? t.content : t.pending ? <span className="aithink">Thinking… a local model can take a minute.</span>
+          : T.map((t, i) => <div key={i} className={`aimsg ${t.role}${t.err ? ' err' : ''}`}>{t.role === 'user' ? t.content : t.pending ? <span className="aithink">Thinking…</span>
               : <><Md text={t.content} />{t.tools && t.tools.length > 0 && <div className="hint" style={{ marginTop: 4 }}>Looked up: {[...new Set(t.tools)].map(x => x.replace(/_/g, ' ')).join(', ')}</div>}</>}</div>)}
       </div>
       <div className="aiinput">

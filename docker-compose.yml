@@ -42,26 +42,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # The assistant's local model. Optional: start with `docker compose --profile ai up -d`.
-  # The first start downloads the model (about 5 GB for qwen2.5:7b) into the `ollama` volume.
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["ai"]
-    volumes:
-      - ollama:/root/.ollama
-    restart: unless-stopped
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    profiles: ["ai"]
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull ${AI_MODEL:-qwen2.5:7b}"]
-    depends_on:
-      - ollama
-    restart: "no"
-
 volumes:
   pgdata:
   uploads:
-  ollama:

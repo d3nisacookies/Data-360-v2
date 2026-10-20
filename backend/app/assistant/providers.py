@@ -1,5 +1,5 @@
-"""Model providers. Ollama (local, free) is the default; Anthropic, AWS Bedrock and Google Vertex
-are optional and configured only on the server (keys never reach the browser).
+"""Model providers: OpenRouter, OpenAI (or any OpenAI-compatible service), Anthropic, AWS Bedrock
+and Google Vertex. All are configured only on the server; keys never reach the browser.
 
 Every provider gets the same thing: a system prompt, the conversation, the tool list and a
 `run_tool(name, args) -> str` callback. It loops on tool calls and returns the final text.
@@ -26,13 +26,27 @@ class Answer:
     tools: list[str] = field(default_factory=list)
 
 
+def provider_name() -> str:
+    s = get_settings()
+    p = (s.ai_provider or "off").strip().lower()
+    if p == "auto":
+        return ("openrouter" if s.openrouter_api_key else "openai" if s.openai_api_key
+                else "anthropic" if s.anthropic_api_key else "openrouter")
+    return p
+
+
 def describe() -> dict:
     s = get_settings()
-    p = (s.ai_provider or "off").lower()
-    model = s.ai_model or {"ollama": "qwen2.5:7b", "anthropic": "claude-sonnet-5-5"}.get(p, "")
-    label = {"ollama": "Local model (Ollama)", "anthropic": "Anthropic API", "bedrock": f"AWS Bedrock · {s.aws_region}",
+    p = provider_name()
+    model = s.ai_model or {"openrouter": "openrouter/free", "openai": "gpt-5-mini", "anthropic": "claude-sonnet-5-5"}.get(p, "")
+    openai_label = "OpenAI API" if "api.openai.com" in s.openai_base_url else f"OpenAI-compatible API ({httpx.URL(s.openai_base_url).host})"
+    label = {"openrouter": "OpenRouter", "openai": openai_label, "anthropic": "Anthropic API", "bedrock": f"AWS Bedrock · {s.aws_region}",
              "vertex": f"Google Vertex AI · {s.vertex_region}", "off": "Turned off"}.get(p, p)
     missing = ""
+    if p == "openrouter" and not s.openrouter_api_key:
+        missing = "Set OPENROUTER_API_KEY in .env"
+    if p == "openai" and not s.openai_api_key:
+        missing = "Set OPENAI_API_KEY in .env"
     if p == "anthropic" and not s.anthropic_api_key:
         missing = "Set ANTHROPIC_API_KEY in .env"
     if p in ("bedrock", "vertex") and not s.ai_model:
@@ -40,7 +54,7 @@ def describe() -> dict:
     if p == "vertex" and not s.vertex_project:
         missing = "Set VERTEX_PROJECT in .env"
     return {"provider": p, "model": model, "label": label, "configured": p != "off" and not missing, "missing": missing,
-            "local": p == "ollama", "redaction": s.ai_redact}
+            "redaction": s.ai_redact}
 
 
 def chat(system: str, messages: list[dict], tools: list[dict], run_tool) -> Answer:
@@ -49,54 +63,71 @@ def chat(system: str, messages: list[dict], tools: list[dict], run_tool) -> Answ
         raise AIError("The assistant is turned off on this server (AI_PROVIDER=off).")
     if not d["configured"]:
         raise AIError(d["missing"])
-    if d["provider"] == "ollama":
-        return _ollama(d["model"], system, messages, tools, run_tool)
+    if d["provider"] == "openai":
+        return _openai(d["model"], system, messages, tools, run_tool)
+    if d["provider"] == "openrouter":
+        return _openai(d["model"], system, messages, tools, run_tool, openrouter=True)
     return _anthropic_family(d["provider"], d["model"], system, messages, tools, run_tool)
 
 
-# ---------------- Ollama ----------------
-def _ollama(model, system, messages, tools, run_tool, use_tools=True) -> Answer:
+# ---------------- OpenAI (and OpenAI-compatible services) ----------------
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+
+
+def _openai(model, system, messages, tools, run_tool, openrouter=False) -> Answer:
     s = get_settings()
-    url = s.ollama_url.rstrip("/") + "/api/chat"
+    base, key, name, env = ((OPENROUTER_URL, s.openrouter_api_key, "OpenRouter", "OPENROUTER_API_KEY") if openrouter
+                            else (s.openai_base_url, s.openai_api_key, "OpenAI", "OPENAI_API_KEY"))
+    url = base.rstrip("/") + "/chat/completions"
+    headers = {"Authorization": f"Bearer {key}"}
+    if openrouter:
+        headers.update({"HTTP-Referer": "https://github.com/d3nisacookies/Data-360-v2", "X-Title": "Data360"})
     msgs = [{"role": "system", "content": system}, *messages]
     spec = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["schema"]}} for t in tools]
     used = []
     for _ in range(MAX_ROUNDS):
-        body = {"model": model, "messages": msgs, "stream": False, "options": {"temperature": 0.2, "num_ctx": 16384}}
-        if use_tools and spec:
+        body = {"model": model, "messages": msgs}
+        if spec:
             body["tools"] = spec
         try:
-            r = httpx.post(url, json=body, timeout=s.ai_timeout)
+            r = httpx.post(url, json=body, headers=headers, timeout=s.ai_timeout)
         except httpx.ConnectError:
-            raise AIError(f"Can't reach the local model at {s.ollama_url}. Start it with: docker compose --profile ai up -d")
+            raise AIError(f"Can't reach {name} ({base}) from the server. Check the network.")
         except httpx.TimeoutException:
-            raise AIError("The local model took too long to answer. Try a shorter question, or a smaller model (AI_MODEL).")
-        if r.status_code == 404 and "not found" in r.text:
-            raise AIError(f"The model {model} is not downloaded yet. Run: docker compose exec ollama ollama pull {model}")
-        if r.status_code == 400 and "does not support tools" in r.text and use_tools:
-            raise _NoTools()
+            raise AIError("The AI service took too long to answer. Try again.")
         if r.status_code >= 300:
-            raise AIError(f"The local model returned an error ({r.status_code}): {r.text[:200]}")
-        m = r.json().get("message") or {}
+            err = ""
+            try:
+                err = (r.json().get("error") or {}).get("message", "")
+            except ValueError:
+                pass
+            if r.status_code == 401:
+                raise AIError(f"The {name} key was rejected. Check {env} in .env.")
+            if r.status_code == 402:
+                raise AIError(f"The {name} account has no credit for {model}. Use a free model, or add credit.")
+            if r.status_code == 429:
+                raise AIError(f"{name} rate limit reached" + (" (free models have a daily limit)" if openrouter and model.endswith("free") else "")
+                              + ". Try again later. " + err[:160])
+            if r.status_code == 404:
+                raise AIError(f"The model {model} is not available for this key. Set AI_MODEL in .env.")
+            raise AIError(f"The AI service returned an error ({r.status_code}). {err[:200]}")
+        j = r.json()
+        if j.get("error"):  # OpenRouter can return 200 with an error from the upstream model
+            raise AIError(f"{name}: {str((j['error'] or {}).get('message', 'the model returned an error'))[:200]}")
+        m = (j.get("choices") or [{}])[0].get("message") or {}
         calls = m.get("tool_calls") or []
         if not calls:
             return Answer(m.get("content") or "(No answer.)", used)
         msgs.append({"role": "assistant", "content": m.get("content") or "", "tool_calls": calls})
         for c in calls:
             fn = c.get("function") or {}
-            args = fn.get("arguments") or {}
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except ValueError:
-                    args = {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {}
             used.append(fn.get("name", ""))
-            msgs.append({"role": "tool", "tool_name": fn.get("name", ""), "content": run_tool(fn.get("name", ""), args)})
+            msgs.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": run_tool(fn.get("name", ""), args)})
     return Answer("I looked up several things but could not finish the answer. Please ask a narrower question.", used)
-
-
-class _NoTools(Exception):
-    pass
 
 
 # ---------------- Anthropic, Bedrock, Vertex ----------------
@@ -143,12 +174,3 @@ def _anthropic_family(provider, model, system, messages, tools, run_tool) -> Ans
                 results.append({"type": "tool_result", "tool_use_id": b.id, "content": run_tool(b.name, b.input or {})})
         msgs.append({"role": "user", "content": results})
     return Answer("I looked up several things but could not finish the answer. Please ask a narrower question.", used)
-
-
-def chat_with_fallback(system, messages, tools, run_tool, dump) -> Answer:
-    """Ollama models without tool support get the data in the prompt instead."""
-    try:
-        return chat(system, messages, tools, run_tool)
-    except _NoTools:
-        d = describe()
-        return _ollama(d["model"], system + "\n\nDATA (current state, already redacted):\n" + dump(), messages, [], run_tool, use_tools=False)

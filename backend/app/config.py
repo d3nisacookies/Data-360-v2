@@ -29,12 +29,17 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
-    # Assistant. ollama (local, default) | anthropic | bedrock | vertex | off
-    ai_provider: str = "ollama"
-    ai_model: str = ""            # blank = qwen2.5:7b for Ollama, claude-sonnet-5-5 for Anthropic; required for Bedrock and Vertex
+    # Assistant. auto | openrouter | openai | anthropic | bedrock | vertex | off
+    # auto = the first key that is set: OPENROUTER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY.
+    ai_provider: str = "auto"
+    # blank = openrouter/free (OpenRouter picks a free model that can use tools), gpt-5-mini (OpenAI),
+    # claude-sonnet-5-5 (Anthropic); required for Bedrock and Vertex
+    ai_model: str = ""
+    openrouter_api_key: str = ""
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"  # any OpenAI-compatible service also works
     ai_redact: bool = True        # replace names, IDs and personal data with tokens before anything reaches the model
     ai_timeout: int = 240         # seconds
-    ollama_url: str = "http://ollama:11434"
     anthropic_api_key: str = ""
     aws_region: str = "ap-southeast-1"      # Bedrock; credentials come from the standard AWS chain
     vertex_project: str = ""

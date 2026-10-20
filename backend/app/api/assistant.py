@@ -99,7 +99,7 @@ def chat(body: ChatIn, db: Session = Depends(get_db), user: User = Depends(curre
     msgs = [{"role": m.role, "content": R.text(m.content)} for m in body.messages[-12:]]
     system = R.text(instructions("[CLIENT-1]" if d["redaction"] else b.name, ctx["ref_date"].isoformat(), d["redaction"]))
     try:
-        ans = PV.chat_with_fallback(system, msgs, TL.TOOLS, run_tool, lambda: R.obj(TL.context_dump(ctx, extra))[:24000])
+        ans = PV.chat(system, msgs, TL.TOOLS, run_tool)
     except PV.AIError as e:
         raise HTTPException(503, str(e))
     audit.log(db, user, "ai.ask", b.name, provider=d["provider"], model=d["model"], redacted=d["redaction"], tools=ans.tools,

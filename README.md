@@ -121,22 +121,22 @@ A chat panel on every page answers questions about the selected client (the cred
 **Controls**
 
 - **Off for every client until an administrator switches it on** (in the panel). The switch, and every question, are recorded in the audit log.
-- **Redaction:** client names, identifiers, people's names, emails and phone numbers are replaced with tokens such as `[CLIENT-1]` before anything reaches the model, and put back in the answer. Personal-data values are masked in lookups. Turn off with `AI_REDACT=false` only for a model that runs on your own servers.
+- **Redaction:** client names, identifiers, people's names, emails and phone numbers are replaced with tokens such as `[CLIENT-1]` before anything reaches the model, and put back in the answer. Personal-data values are masked in lookups. Leave it on unless the model runs on servers your bank controls.
 - **Provider and region set on the server only.** No key ever reaches the browser.
 
-**Use the free local model (default)**
+**Turn it on**
 
-```bash
-docker compose --profile ai up -d   # starts Ollama and downloads qwen2.5:7b (about 5 GB) the first time
-```
+1. Put one API key in `.env`: `OPENROUTER_API_KEY` (create one at [openrouter.ai/keys](https://openrouter.ai/keys)), or `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
+2. Run `docker compose up -d`. The key stays on the server.
+3. Open a client, click **✦ Ask Data 360**, and (as an admin) switch it on for that client.
 
-It needs about 8 GB of free memory and answers in 10 to 60 seconds on a CPU. On a smaller machine set `AI_MODEL=qwen2.5:3b` in `.env`, then run the command again.
+With OpenRouter and no `AI_MODEL`, Data360 uses `openrouter/free`, which picks a free model that can look things up. Free models have daily limits and may log prompts, which is one reason redaction is on. For better answers, set `AI_MODEL` to a paid model ID from [openrouter.ai/models](https://openrouter.ai/models) and add credit to the OpenRouter account.
 
-**Use a cloud provider instead** (set in `.env`, then `docker compose up -d`):
+**For a bank deployment**, use a provider and region the bank approves:
 
 | `AI_PROVIDER` | Also set | Credentials |
 |---|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` | the key |
+| `openai` | `OPENAI_BASE_URL` for any other OpenAI-compatible service | `OPENAI_API_KEY` |
 | `bedrock` | `AI_MODEL` (the model ID enabled in your AWS account), `AWS_REGION` | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or an instance role |
 | `vertex` | `AI_MODEL`, `VERTEX_PROJECT`, `VERTEX_REGION` | Google application default credentials (mount a service-account file and set `GOOGLE_APPLICATION_CREDENTIALS`) |
 
