@@ -669,7 +669,10 @@ h1,h2,h3,.brand b,.kpi .v,.ring b,.dhero h1,.hhero h1,.screenhead h1{font-family
 .sitenav .who{color:rgba(255,255,255,.75);font-size:12.5px}
 .sn-btn{font:inherit;font-size:12.5px;color:#fff;background:transparent;border:1px solid rgba(73,172,181,.4);border-radius:8px;padding:5px 11px;cursor:pointer}
 .sn-btn:hover{border-color:var(--teal);background:rgba(73,172,181,.08)}
-@media (max-width:1100px){.sn-text span,.sn-user{display:none}.sitenav{padding:8px 16px}.sitenav nav.main a{padding:7px 10px;font-size:13.5px}}
+.sitenav{flex-wrap:nowrap}.sitenav nav.main{flex-wrap:nowrap}.sitenav nav.main a{white-space:nowrap}.sitenav .who{flex-wrap:nowrap;white-space:nowrap}
+@media (max-width:1440px){.sn-user{display:none}.sitenav nav.main a{padding:8px 13px}}
+@media (max-width:1180px){.sn-text span{display:none}.sitenav{padding:8px 16px;gap:10px 14px}.sitenav nav.main a{padding:7px 10px;font-size:13.5px}}
+@media (max-width:900px){.sitenav{flex-wrap:wrap}.sitenav nav.main{order:3;width:100%;overflow-x:auto}}
 @media (max-width:620px){.sitenav{position:static}.sn-logo img{width:56px;height:28px}}
 
 /* buttons: teal fill with navy text, 11px corners */
