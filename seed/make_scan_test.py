@@ -8,7 +8,9 @@ and a few documents (Word, PDF, email, text) that only the AI Collector will be 
 The answer key is written NEXT TO the folder, not inside it, so the scan never sees it.
 
     python seed/make_scan_test.py                      # ./scan-test and ./scan-test-answer-key.json
-    python seed/make_scan_test.py C:/Data360-test      # Windows: C:/Data360-test and C:/Data360-test-answer-key.json
+    python seed/make_scan_test.py C:/Users/you/Data360-test           # Windows (PowerShell)
+    python3 seed/make_scan_test.py /mnt/c/Users/you/Data360-test      # WSL
+(Use a folder you own: Windows does not let normal users write files at the top of C:\.)
 
 Standard library only. All content is hypothetical. Running it again rebuilds the folder from scratch.
 """
@@ -169,7 +171,12 @@ def build(dest: Path, key_path: Path) -> dict:
 
     truth = {"folder": str(dest), "borrowers": sorted([*BORROWERS, NEW_BORROWER]), "files": key,
              "note": "Hypothetical test data. Expected outcomes: loaded, duplicate (one copy of each group loads), not_recognised, not_read_yet, skipped."}
-    key_path.write_text(json.dumps(truth, indent=1), encoding="utf-8")
+    try:
+        key_path.write_text(json.dumps(truth, indent=1), encoding="utf-8")
+    except PermissionError:   # e.g. next to a folder at the top of C:\, where Windows only lets admins write files
+        key_path = Path.cwd() / key_path.name
+        key_path.write_text(json.dumps(truth, indent=1), encoding="utf-8")
+    truth["key_path"] = str(key_path)
     return truth
 
 
@@ -180,7 +187,7 @@ def main():
     t = build(dest, key)
     n = {k: sum(1 for f in t["files"] if f["expect"] == k) for k in ("loaded", "duplicate", "not_recognised", "not_read_yet", "skipped")}
     print(f"Built {dest} with {len(t['files'])} files: " + ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in n.items()))
-    print(f"Answer key: {key} (outside the folder, so the scan cannot see it)")
+    print(f"Answer key: {t['key_path']} (outside the folder, so the scan cannot see it)")
 
 
 if __name__ == "__main__":

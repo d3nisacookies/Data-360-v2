@@ -235,7 +235,7 @@ function ScanPanel({ canEdit }: { canEdit: boolean }) {
           skips copies it already has, and lists documents for the AI Collector. It only reads: nothing in the folder is changed.
           Hidden and system folders (AppData, .cache) and Office lock files are skipped.</p>
         {S && !S.available && <div className="callout">{S.note || 'The scan folder cannot be read.'} In <code>.env</code>, set <code>SCAN_HOST_DIR</code> to the folder,
-          for example <code>C:/Data360-test</code>, then run <code>docker compose up -d</code>.</div>}
+          for example <code>C:/Users/you/Data360-test</code> (from WSL: <code>/mnt/c/Users/you/Data360-test</code>), then run <code>docker compose up -d</code>.</div>}
         <div className="row" style={{ gap: 10, alignItems: 'center' }}>
           {canEdit && <button type="button" className="btn primary" disabled={!S?.available || run.isPending} onClick={() => run.mutate()}>
             {run.isPending ? 'Scanning…' : R ? 'Scan again' : 'Scan folder'}</button>}

@@ -111,11 +111,12 @@ The folder is mounted **read-only** at `/scan`, so Data360 cannot change or dele
 Test it on your own PC with a planted folder and an answer key:
 
 ```bash
-python seed/make_scan_test.py C:/Data360-test      # builds the folder + C:/Data360-test-answer-key.json (outside it)
-# .env:  SCAN_HOST_DIR=C:/Data360-test
+python seed/make_scan_test.py C:/Users/you/Data360-test   # builds the folder + ...Data360-test-answer-key.json next to it
+# (WSL: python3 seed/make_scan_test.py /mnt/c/Users/you/Data360-test)
+# .env:  SCAN_HOST_DIR=C:/Users/you/Data360-test   (WSL: /mnt/c/Users/you/Data360-test)
 docker compose up -d                               # remounts the folder
 # Data360 → Upload files → Scan folder, then:
-python seed/score_scan.py C:/Data360-test-answer-key.json --url http://localhost:8080
+python seed/score_scan.py C:/Users/you/Data360-test-answer-key.json --url http://localhost:8080
 ```
 
 The planted folder has the 26 sample files spread over three people's folders and a shared drive, exact copies, files in AppData and a hidden folder, an Office lock file, five decoy spreadsheets (one named "Harbour View Dental"), a genuine file for a new borrower (Kestrel Shipping), and four documents. The scorecard reports data files found and loaded once, decoys rejected, documents listed, items skipped, and borrowers found, missed or invented. Run the generator again to start over.
