@@ -102,6 +102,24 @@ Every value is stored in one long table (`observations`), whatever layout the fi
 
 `seed/ideal-files` has the same borrowers, files and layouts as `seed/sample-files`, with the data put right: correct, complete, current and consistent across every source. Load it into a reset instance to compare: data confidence before Clean goes from 78–82 on the fragmented set to 97, the Seeker finds 11 of 13 attributes with no conflicts, and the draft memo moves from Refer to Approve With Conditions. `seed/ideal-files/README.md` lists every difference and why the score stops at 97. Regenerate it with `python3 seed/make_ideal.py`.
 
+### Scan a folder (step 1 of the AI Collector)
+
+Instead of uploading files one by one, Data360 can look through a folder and load what it finds: **Upload files → Scan a folder**. It walks the folder and its subfolders, loads spreadsheets and CSVs exactly as an upload would, skips identical copies, and lists PDFs, Word files, emails and text notes for the AI Collector (the next step). Hidden and system folders (AppData, `.cache`), Office lock files and other file types are skipped. Files it cannot place (not loan data, or no recognisable borrower) are listed but not loaded.
+
+The folder is mounted **read-only** at `/scan`, so Data360 cannot change or delete anything in it, and it sees nothing outside it.
+
+Test it on your own PC with a planted folder and an answer key:
+
+```bash
+python seed/make_scan_test.py C:/Data360-test      # builds the folder + C:/Data360-test-answer-key.json (outside it)
+# .env:  SCAN_HOST_DIR=C:/Data360-test
+docker compose up -d                               # remounts the folder
+# Data360 → Upload files → Scan folder, then:
+python seed/score_scan.py C:/Data360-test-answer-key.json --url http://localhost:8080
+```
+
+The planted folder has the 26 sample files spread over three people's folders and a shared drive, exact copies, files in AppData and a hidden folder, an Office lock file, five decoy spreadsheets (one named "Harbour View Dental"), a genuine file for a new borrower (Kestrel Shipping), and four documents. The scorecard reports data files found and loaded once, decoys rejected, documents listed, items skipped, and borrowers found, missed or invented. Run the generator again to start over.
+
 ### How the engine decides
 
 - **Source: Collector.** You choose which uploaded sources are in scope and which credit-memo outputs you need (borrower profile, facility summary, KYC and sanctions, and so on). It shows the coverage of each output: which evidence is held, where, and what is missing. It can also add an out-of-scope source and run again. Assess, Clean and Normalise then use only the sources in scope.

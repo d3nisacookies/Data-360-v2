@@ -22,7 +22,7 @@ ALLOWED = {".xlsx", ".xlsm", ".csv"}
 def out(u: Upload, preview: bool = False) -> dict:
     d = {"id": u.id, "filename": u.filename, "status": u.status, "format": u.detected_format, "size": u.size_bytes,
          "created_at": u.created_at.isoformat(), "ingested_at": u.ingested_at.isoformat() if u.ingested_at else None,
-         "summary": u.summary, "error": u.error, "mapping": u.mapping}
+         "summary": u.summary, "error": u.error, "mapping": u.mapping, "source_path": u.source_path}
     if preview and u.mapping.get("sheet"):
         try:
             t = next((x for x in read_tables(u.stored_path) if x.sheet == u.mapping["sheet"]), None)
@@ -51,6 +51,51 @@ def get_upload(uid: int, db: Session = Depends(get_db), _: User = Depends(curren
     return out(u, preview=True)
 
 
+def store_and_ingest(db: Session, user: User, name: str, data: bytes, borrower: str = "", source: str = "",
+                     review: bool = False, origin: str | None = None) -> dict:
+    """Store one file, detect its layout and ingest it if it maps cleanly. Used by uploads and the folder scan.
+
+    Returns the upload as a dict; `duplicate: True` when the same bytes were already ingested.
+    """
+    if Path(name).suffix.lower() not in ALLOWED:
+        return {"filename": name, "status": "failed", "error": "Only .xlsx, .xlsm and .csv files are supported"}
+    if len(data) > get_settings().max_upload_mb * 1024 * 1024:
+        return {"filename": name, "status": "failed", "error": f"Larger than {get_settings().max_upload_mb} MB"}
+    path, sha = storage.save(data, name)
+    dup = db.scalar(select(Upload).where(Upload.sha256 == sha, Upload.status == "ingested"))
+    if dup:
+        return {**out(dup), "duplicate": True}
+    u = Upload(filename=name, stored_path=path, sha256=sha, size_bytes=len(data), uploaded_by=user.id, source_path=origin)
+    db.add(u)
+    db.flush()
+    try:
+        p = detect(path, name)
+    except Exception as e:
+        u.status, u.error = "failed", f"Could not read the file: {e}"
+        audit.log(db, user, "upload.failed", name, error=u.error)
+        db.commit()
+        return out(u)
+    if borrower and "borrower" in p.get("missing", []):
+        p["defaults"]["borrower"] = borrower
+        p["missing"].remove("borrower")
+    if source and "source" in p.get("missing", []):
+        p["defaults"]["source"] = source
+        p["missing"].remove("source")
+    u.detected_format, u.mapping = p["format"], p
+    audit.log(db, user, "upload", name, sha256=sha, format=p["format"], sheet=p.get("sheet"), **({"path": origin} if origin else {}))
+    if p["format"] != "unknown" and not p["missing"] and not p.get("uncertain") and not review:
+        try:
+            ingest(db, u, p)
+            audit.log(db, user, "ingest", name, **{k: v for k, v in u.summary.items() if k != "borrowers"})
+        except MappingError as e:
+            u.status, u.error = "needs_mapping", str(e)
+    else:
+        u.status = "needs_mapping" if p["format"] != "unknown" else "failed"
+        u.error = p.get("error", "")
+    db.commit()
+    return out(u)
+
+
 @router.post("/uploads")
 async def upload(files: list[UploadFile] = File(...), borrower: str = Form(""), source: str = Form(""),
                  review: bool = Form(False), db: Session = Depends(get_db), user: User = Depends(can_edit)):
@@ -58,53 +103,7 @@ async def upload(files: list[UploadFile] = File(...), borrower: str = Form(""), 
 
     Files that need a decision (borrower, source, uncertain columns) wait in `needs_mapping`.
     """
-    limit = get_settings().max_upload_mb * 1024 * 1024
-    results = []
-    for f in files:
-        name = Path(f.filename or "upload").name
-        if Path(name).suffix.lower() not in ALLOWED:
-            results.append({"filename": name, "status": "failed", "error": "Only .xlsx, .xlsm and .csv files are supported"})
-            continue
-        data = await f.read()
-        if len(data) > limit:
-            results.append({"filename": name, "status": "failed", "error": f"Larger than {get_settings().max_upload_mb} MB"})
-            continue
-        path, sha = storage.save(data, name)
-        dup = db.scalar(select(Upload).where(Upload.sha256 == sha, Upload.status == "ingested"))
-        if dup:
-            results.append({**out(dup), "duplicate": True})
-            continue
-        u = Upload(filename=name, stored_path=path, sha256=sha, size_bytes=len(data), uploaded_by=user.id)
-        db.add(u)
-        db.flush()
-        try:
-            p = detect(path, name)
-        except Exception as e:
-            u.status, u.error = "failed", f"Could not read the file: {e}"
-            audit.log(db, user, "upload.failed", name, error=u.error)
-            db.commit()
-            results.append(out(u))
-            continue
-        if borrower and "borrower" in p.get("missing", []):
-            p["defaults"]["borrower"] = borrower
-            p["missing"].remove("borrower")
-        if source and "source" in p.get("missing", []):
-            p["defaults"]["source"] = source
-            p["missing"].remove("source")
-        u.detected_format, u.mapping = p["format"], p
-        audit.log(db, user, "upload", name, sha256=sha, format=p["format"], sheet=p.get("sheet"))
-        if p["format"] != "unknown" and not p["missing"] and not p.get("uncertain") and not review:
-            try:
-                ingest(db, u, p)
-                audit.log(db, user, "ingest", name, **{k: v for k, v in u.summary.items() if k != "borrowers"})
-            except MappingError as e:
-                u.status, u.error = "needs_mapping", str(e)
-        else:
-            u.status = "needs_mapping" if p["format"] != "unknown" else "failed"
-            u.error = p.get("error", "")
-        db.commit()
-        results.append(out(u))
-    return results
+    return [store_and_ingest(db, user, Path(f.filename or "upload").name, await f.read(), borrower, source, review) for f in files]
 
 
 @router.post("/uploads/{uid}/sheet")

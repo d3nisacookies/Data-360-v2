@@ -52,6 +52,8 @@ class Upload(Base):
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # where a folder scan found the file (relative to the scan folder); empty for browser uploads
+    source_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

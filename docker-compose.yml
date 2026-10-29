@@ -24,9 +24,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-data360}:${POSTGRES_PASSWORD:-data360}@db:5432/${POSTGRES_DB:-data360}
       STORAGE_DIR: /data
+      SCAN_ROOT: /scan
     volumes:
       - uploads:/data
       - ./seed:/seed:ro
+      # the folder the scan may read, mounted read-only (set SCAN_HOST_DIR in .env, e.g. C:/Data360-test)
+      - ${SCAN_HOST_DIR:-./scan-test}:/scan:ro
     depends_on:
       db:
         condition: service_healthy

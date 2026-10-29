@@ -125,10 +125,17 @@ export interface Mapping {
 }
 export interface UploadRow {
   id: number; filename: string; status: 'detected' | 'needs_mapping' | 'ingested' | 'failed'; format: string; size: number
-  created_at: string; ingested_at: string | null; error: string; mapping: Mapping; duplicate?: boolean
+  created_at: string; ingested_at: string | null; error: string; mapping: Mapping; duplicate?: boolean; source_path?: string | null
   summary: { observations?: number; records?: number; borrowers?: { id: number; name: string }[]; sources?: string[]; skipped_rows?: number }
   preview?: { headers: string[]; rows: (string | null)[][] } | null
 }
+export type ScanOutcome = 'loaded' | 'duplicate' | 'not_recognised' | 'not_read_yet' | 'failed'
+export interface ScanFile { path: string; kind: string; size?: number; modified?: string; outcome: ScanOutcome; note?: string; borrowers?: string[]; sources?: string[]; values?: number; upload_id?: number }
+export interface ScanReport {
+  root: string; at: string; by: string; seconds: number; found: number; truncated: boolean; borrowers: string[]
+  counts: Record<ScanOutcome, number>; skipped: Record<string, number>; files: ScanFile[]
+}
+export interface ScanStatus { root: string; available: boolean; readonly: boolean; note: string; last: ScanReport | null }
 export interface FieldDef { key: string; label: string; type: string; critical: boolean; section: string; synonyms: string[] }
 
 // ---------- later steps (memo, Phase 2, Phase 3): server-described screens ----------

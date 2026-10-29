@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api, type BorrowerRow, type FieldDef, type Mapping, type UploadRow } from '../api'
+import { api, type BorrowerRow, type FieldDef, type Mapping, type ScanOutcome, type ScanReport, type ScanStatus, type UploadRow } from '../api'
 import { useAuth } from '../auth'
 import { Chip, ErrorNote, Spinner, toast, when } from '../components/ui'
 
@@ -66,6 +66,8 @@ export default function Upload() {
         </section>
       ) : <div className="callout">Your role can view uploads but not add them.</div>}
 
+      <ScanPanel canEdit={canEdit} />
+
       {open !== null && <MappingEditor key={open} id={open} onClose={() => setOpen(null)} />}
       <section className="panel">
         <div className="ph"><h2>Files</h2><span className="hint">{rows.length} uploaded</span></div>
@@ -76,7 +78,7 @@ export default function Upload() {
               <tbody>
                 {rows.map(u => (
                   <tr key={u.id}>
-                    <td><b>{u.filename}</b>{u.error && <div className="hint bad">{u.error}</div>}</td>
+                    <td style={{ maxWidth: 420 }}><b>{u.filename}</b>{u.source_path && <div className="hint mono" title="Found by the folder scan" style={{ wordBreak: 'break-all' }}>Scan · {u.source_path}</div>}{u.error && <div className="hint bad">{u.error}</div>}</td>
                     <td>{u.format === 'dictionary' ? 'Data dictionary' : u.format === 'records' ? 'Records' : '—'}{u.mapping?.sheet && <div className="hint">Sheet: {u.mapping.sheet}</div>}</td>
                     <td><Chip kind={STATUS[u.status][1]}>{STATUS[u.status][0]}</Chip></td>
                     <td className="hint">{u.status === 'ingested' ? <>{u.summary.observations?.toLocaleString()} values · {(u.summary.borrowers || []).length > 2 ? `${u.summary.borrowers!.length} borrowers` : (u.summary.borrowers || []).map((b, i) =>
@@ -191,6 +193,78 @@ function MappingEditor({ id, onClose }: { id: number; onClose: () => void }) {
         <span className="grow" />
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={blocked || go.isPending} onClick={() => go.mutate()}>{go.isPending ? 'Loading…' : data.status === 'ingested' ? 'Reload with this mapping' : 'Load data'}</button>
+      </div>
+    </section>
+  )
+}
+
+const OUT: Record<ScanOutcome, [string, 'ok' | 'warn' | 'bad' | 'info' | 'idle', string]> = {
+  loaded: ['Loaded', 'ok', 'Read and loaded, like an upload'],
+  duplicate: ['Duplicate', 'idle', 'Same file already loaded; skipped'],
+  not_recognised: ['Not recognised', 'warn', 'Not loan data, or the borrower could not be worked out; not loaded'],
+  not_read_yet: ['For the AI Collector', 'info', 'Documents (PDF, Word, email, text) the AI Collector will read'],
+  failed: ['Failed', 'bad', 'Could not be opened'],
+}
+
+function ScanPanel({ canEdit }: { canEdit: boolean }) {
+  const qc = useQueryClient()
+  const [show, setShow] = useState<ScanOutcome | 'all'>('all')
+  const st = useQuery({ queryKey: ['scan'], queryFn: () => api.get<ScanStatus>('/scan') })
+  const run = useMutation({
+    mutationFn: () => api.post<ScanReport>('/scan'),
+    onSuccess: r => {
+      qc.setQueryData<ScanStatus>(['scan'], old => old ? { ...old, last: r } : old)
+      qc.invalidateQueries({ queryKey: ['uploads'] }); qc.invalidateQueries({ queryKey: ['borrowers'] })
+      toast(`Scan finished: ${r.counts.loaded} loaded, ${r.counts.duplicate} duplicates, ${r.counts.not_read_yet} documents for the AI Collector`)
+    },
+  })
+  const S = st.data, R = S?.last
+  const download = () => {
+    if (!R) return
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(R, null, 1)], { type: 'application/json' }))
+    a.download = 'data360-scan-report.json'; a.click(); URL.revokeObjectURL(a.href)
+  }
+  const files = R ? R.files.filter(f => show === 'all' || f.outcome === show) : []
+  return (
+    <section className="panel" aria-labelledby="scanh">
+      <div className="ph"><h2 id="scanh">Scan a folder</h2>
+        <span className="hint">{!S ? 'Checking…' : S.available ? <>Folder <code className="mono">{S.root}</code>{S.readonly ? ' · read-only' : ''}</> : 'No folder connected'}</span></div>
+      <div className="pb stack">
+        <p className="hint" style={{ margin: 0 }}>Data360 looks through the connected folder and its subfolders, loads the spreadsheets and CSVs it can read,
+          skips copies it already has, and lists documents for the AI Collector. It only reads: nothing in the folder is changed.
+          Hidden and system folders (AppData, .cache) and Office lock files are skipped.</p>
+        {S && !S.available && <div className="callout">{S.note || 'The scan folder cannot be read.'} In <code>.env</code>, set <code>SCAN_HOST_DIR</code> to the folder,
+          for example <code>C:/Data360-test</code>, then run <code>docker compose up -d</code>.</div>}
+        <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+          {canEdit && <button type="button" className="btn primary" disabled={!S?.available || run.isPending} onClick={() => run.mutate()}>
+            {run.isPending ? 'Scanning…' : R ? 'Scan again' : 'Scan folder'}</button>}
+          {R && <button type="button" className="btn" onClick={download}>Download report (.json)</button>}
+          {R && <span className="hint">Last scan {when(R.at)} by {R.by} · {R.found} files in {R.seconds}s{R.truncated ? ' · stopped at the file limit' : ''}</span>}
+        </div>
+        <ErrorNote error={run.error} />
+        {R && <>
+          <div className="dkpis" style={{ marginBottom: 0 }}>
+            {(Object.keys(OUT) as ScanOutcome[]).map(k => (
+              <button key={k} type="button" className="kpi" title={OUT[k][2]} aria-pressed={show === k} onClick={() => setShow(show === k ? 'all' : k)}
+                style={{ textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit', outline: show === k ? '2px solid var(--teal)' : undefined }}>
+                <div className="v">{R.counts[k] ?? 0}</div><div className="k">{OUT[k][0]}</div></button>))}
+          </div>
+          <p className="hint" style={{ margin: 0 }}>Borrowers in the scanned files: {R.borrowers.join(' · ') || 'none'}.
+            {' '}Skipped without reading: {Object.entries(R.skipped).map(([k, v]) => `${v} ${k}`).join(', ')}.</p>
+          <div className="tblwrap" style={{ maxHeight: 420 }}>
+            <table>
+              <thead><tr><th>File</th><th>Type</th><th>Outcome</th><th>Detail</th></tr></thead>
+              <tbody>{files.map(f => (
+                <tr key={f.path}>
+                  <td className="mono" style={{ wordBreak: 'break-all' }}>{f.path}</td>
+                  <td>{f.kind}</td>
+                  <td><Chip kind={OUT[f.outcome][1]}>{OUT[f.outcome][0]}</Chip></td>
+                  <td className="hint">{f.outcome === 'loaded' ? `${(f.values ?? 0).toLocaleString()} values · ${(f.borrowers || []).length > 2 ? `${f.borrowers!.length} borrowers` : (f.borrowers || []).join(', ')}` : f.note || '—'}</td>
+                </tr>))}</tbody>
+            </table>
+          </div>
+        </>}
       </div>
     </section>
   )

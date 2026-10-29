@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     storage_dir: str = "./storage"
     max_upload_mb: int = 50
 
+    # Folder scan: the folder Data360 may read (mounted read-only at /scan in compose) and safety limits.
+    scan_root: str = "/scan"
+    scan_max_files: int = 5000
+
     # Records older than this many days count as stale.
     stale_days: int = 90
     # Reference date for timeliness, YYYY-MM-DD. Empty = today.

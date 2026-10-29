@@ -9,3 +9,5 @@ e2e/test-results/
 e2e/playwright-report/
 .DS_Store
 *.tsbuildinfo
+scan-test/
+scan-test-answer-key.json

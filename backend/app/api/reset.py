@@ -55,6 +55,7 @@ def reset_all(body: ResetIn, db: Session = Depends(get_db), user: User = Depends
         db.execute(delete(Observation))
         out["uploads"] = db.execute(delete(Upload)).rowcount
         out["borrowers"] = db.execute(delete(Borrower)).rowcount
+        db.execute(delete(Setting).where(Setting.key == "scan.last"))   # the last scan report described those files
         for p in paths:
             try:
                 os.remove(p)
