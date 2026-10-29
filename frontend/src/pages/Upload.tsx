@@ -247,7 +247,7 @@ function ScanPanel({ canEdit }: { canEdit: boolean }) {
           <div className="dkpis" style={{ marginBottom: 0 }}>
             {(Object.keys(OUT) as ScanOutcome[]).map(k => (
               <button key={k} type="button" className="kpi" title={OUT[k][2]} aria-pressed={show === k} onClick={() => setShow(show === k ? 'all' : k)}
-                style={{ textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit', outline: show === k ? '2px solid var(--teal)' : undefined }}>
+                style={{ textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit', outline: show === k ? '2px solid var(--accent)' : undefined }}>
                 <div className="v">{R.counts[k] ?? 0}</div><div className="k">{OUT[k][0]}</div></button>))}
           </div>
           <p className="hint" style={{ margin: 0 }}>Borrowers in the scanned files: {R.borrowers.join(' · ') || 'none'}.

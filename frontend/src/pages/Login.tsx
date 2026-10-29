@@ -18,7 +18,7 @@ export default function Login() {
   return (
     <div className="login">
       <form className="panel" onSubmit={submit}>
-        <div className="ph loginhead"><img src="/logo-mark.png" alt="" width={76} height={38} /><div><h1>Data360</h1><p className="hint">Trusted data for credit decisions</p></div></div>
+        <div className="ph"><div><h1>Data360</h1><p className="hint">Prepare trusted data for credit memos</p></div></div>
         <div className="pb stack">
           <label className="f"><span className="lbl">Email</span>
             <input type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label>
